@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, Config, nativeRouteConfig } from '../src/role-agent.js';
+import { apply, Config, nativeRouteConfig } from '../src/role-routing.js';
 import { DEFAULT_WORKERS, clone } from '../src/roles.js';
 
 export async function mountExecutor(role = 'iterate', service = { route: key => DEFAULT_WORKERS[key] }) {
@@ -48,13 +48,15 @@ test('route saved during asynchronous preflight cannot change an already admitte
   assert.deepEqual(mounted.preflights[0], mounted.starts[0].request.agentOptions);
 });
 
-test('all three native role tools reject model-facing overrides', async () => {
+test('all three native role tools reject model-facing overrides and route to their specialized presets', async () => {
+  const expectedPresets = { iterate: 'xingheng-worker', implement: 'xingheng-worker', analyze: 'xingheng-analyst' };
   for (const role of ['iterate', 'implement', 'analyze']) {
     const mounted = await mountExecutor(role);
     assert.equal('model' in mounted.definitions.get(`subagent_${role}`).parameters.properties, false);
     await assert.rejects(mounted.invoke({ provider: 'zero', model: 'other' }), /selection is disabled/);
     await mounted.invoke({});
     assert.equal(mounted.starts.length, 1);
+    assert.equal(mounted.starts[0].request.agentPreset, expectedPresets[role]);
   }
 });
 

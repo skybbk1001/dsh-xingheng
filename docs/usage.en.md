@@ -1,6 +1,6 @@
 # Xingheng Detailed Usage & Troubleshooting Guide
 
-This guide covers the complete installation workflow, three-role ordinary subagent configuration interfaces, operational boundaries between **Native Agent Teams** and **Ordinary Role Subagents (Workers)**, control tool aliases and addressing protocols, CAS revision rules, and troubleshooting for `@local/dsh-xingheng` `3.0.0`.
+This guide covers the complete installation workflow, three-role ordinary subagent configuration interfaces, operational boundaries between **Native Agent Teams** and **Ordinary Role Subagents (Workers)**, control tool aliases and addressing protocols, CAS revision rules, and troubleshooting for `@local/dsh-xingheng` `3.1.0`.
 
 [Back to English README](../README.en.md) · [中文详细使用指南](usage.md) · [Architecture](architecture.md) · [Migration & Cleanup](migration.md) · [Acceptance Record](acceptance.md)
 
@@ -49,11 +49,11 @@ Xingheng provides three interfaces backed by the exact same validation and `Conf
 
 Display names, configuration keys and delegation tool IDs now describe the task responsibility. Only the identifiers below are supported; legacy role keys and tool names have no aliases or parser fallback.
 
-| Role | Configuration key | Delegation tool ID |
-| :--- | :--- | :--- |
-| Quick iteration | `iterate` | `subagent_iterate` |
-| Feature implementation | `implement` | `subagent_implement` |
-| Analysis and planning | `analyze` | `subagent_analyze` |
+| Role | Configuration key | Delegation tool ID | Bound preset & tool boundary |
+| :--- | :--- | :--- | :--- |
+| Quick iteration | `iterate` | `subagent_iterate` | `xingheng-worker` (scoped read/write + shell) |
+| Feature implementation | `implement` | `subagent_implement` | `xingheng-worker` (scoped read/write + shell) |
+| Analysis and planning | `analyze` | `subagent_analyze` | `xingheng-analyst` (schema-level read-only) |
 
 Use the role labels in the UI and natural-language task requests. Use the exact identifiers above in JSON, tool calls and source-level references; do not replace JSON keys with display labels.
 
@@ -82,7 +82,7 @@ When explicitly requested by the user, the assistant can read or save role route
     "action": "read"
   }
   ```
-  Returns `version` (`"3.0.0"`), `workers`, `revision` (the CAS revision string), `providers` (with advertised `models`, `efforts`, and `defaultEffort`), `preset`, and `applies` (`"next-child"`).
+  Returns `version` (`"3.1.0"`), `workers`, `revision` (the CAS revision string), `providers` (with advertised `models`, `efforts`, and `defaultEffort`), `preset`, and `applies` (`"next-child"`).
 
 - **Save a complete configuration (requires `expectedRevision` and all three roles)**:
   ```json
@@ -127,11 +127,13 @@ On the `xingheng` Lead preset, ordinary subagent controls are namespaced under `
 - **`subagent_message`**: Sends a follow-up message to a direct continuable child (`{ agent_id: "<child-session-id>", message: "..." }`).
 - **`subagent_interrupt`**: Requests a running child or descendant to stop its current work (`{ agent_id: "<child-session-id>" }`).
 
-### 3.3 Worker Capability Mask & Soft Checkpoints
+### 3.3 Responsibilities and handoff
 
-- **No Browser, Search, or IM Tools**: `xingheng-worker` has no `web_search`, `web_fetch`, `research`, Playwright browser, or IM tools. If external documentation or browser inspection is required, **the Lead must gather that evidence first** and include it in the worker's prompt.
-- **12-Call / 10-Minute Soft Checkpoint**: At **12 tool calls or 10 minutes** (whichever is observed first), or after two consecutive steps without progress, the preset prompt asks the worker to complete its current safe action, reports `CHECKPOINT` with partial work, unresolved items, and the next proposed slice, and ends its turn.
-- **Completion & Freeze (`READY` / `FREEZE`)**: Once acceptance criteria are met, the worker reports `READY` (listing modified files, checks actually run, and checks NOT run) and freezes all writes. Upon receiving a `FREEZE` message from the Lead, the worker immediately stops all edits, builds, and tests and reports current findings.
+Analysis uses a dedicated reading/search/messaging preset, with no write/edit/shell/jobs/browser/web/IM/configuration/delegation capabilities. It cannot run tests. Feature implementation owns cohesive module slices and test writing; Quick iteration owns targeted patches or explicitly authorized bounded verification. Those two execution roles share the same tool permissions, not separate OS sandboxes.
+
+For complex work, explore/plan first, stabilize shared interfaces sequentially, implement independent cohesive slices, then request fresh-context review of a fixed diff/revision before Lead validation. Give reviewers requirements, diff, constraints and known risks rather than the author's entire transcript. Read-only parallelism does not supply snapshot isolation; freeze writes or detect drift.
+
+READY, checkpoints and freeze are prompt conventions, not hard timers or an automatic verification gate. Handoffs must distinguish evidence, changes, checks run/not run, risks and follow-up work.
 
 ---
 
@@ -194,7 +196,7 @@ Team members coordinate shared work through four native tools backed by the sess
 - **Symptom: Settings section is missing after install, or UI warns *"The Xingheng preset is unavailable"***
   - **Cause**: `plugin_manager` returned `application: "restart-required"`, or the browser tab has not been refreshed.
   - **Fix**: Restart the original DSH Host process (if required), then refresh your browser tab. Do not start a second server on a different port.
-- **Symptom: After upgrading to `3.0.0`, `spawn_teammate`, `team_roster`, or `subagent_message` is missing in an existing conversation**
+- **Symptom: After upgrading to `3.1.0`, `spawn_teammate`, `team_roster`, or `subagent_message` is missing in an existing conversation**
   - **Cause**: Live Agents retain their mounted in-memory revision. Logs retain the preset ID, and recovery after restart resolves its current definition rather than restoring an old implementation.
   - **Fix**: Start a **new session** with the **星衡 · 协作 (`xingheng`)** preset.
 
@@ -223,3 +225,10 @@ Team members coordinate shared work through four native tools backed by the sess
   - **Fix**: Report the exact blocker to the user; do **not** escalate or retry across other subagent roles to bypass infrastructure or permission errors.
 
 > **Alias availability**: if a fresh session after restart lacks `team_*` aliases but has native `list_agents`, `send_message` and `interrupt_agent`, use the native Team interfaces and report the Host version, plugin activation state and tool catalog. A model claim alone does not establish registration failure; a new session is not a guaranteed fix for every activation-order issue.
+
+
+## Model gateway timeouts
+
+Observed repeated 504 errors came from the `zero / gemini-4-argon / high` upstream. Cloudflare reported `origin_gateway_timeout`: the origin did not respond within its deadline. This is not a GitHub proxy-port or local test error. The response does not isolate the exact cause; origin load, queuing, forwarding and timeout configuration require gateway-side investigation.
+
+Record route, time, status and request identifier without secrets or full session logs. Follow backoff hints rather than repeatedly resubmitting. Change routes only with user authorization and do not silently overwrite the three saved worker models. Raising a client timeout alone does not bypass a proxy/origin timeout.

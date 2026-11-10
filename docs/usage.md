@@ -1,6 +1,6 @@
 # 星衡（Xingheng）详细使用与故障排查指南
 
-本指南详细介绍 `@local/dsh-xingheng` `3.0.0` 的安装流程、三路普通子任务配置接口、原生智能体团队（Agent Teams）与普通执行单元（Worker）的协作规范、工具别名与寻址区分、权限与修订号（Revision）机制，以及常见故障排查方法。
+本指南详细介绍 `@local/dsh-xingheng` `3.1.0` 的安装流程、三路普通子任务配置接口、原生智能体团队（Agent Teams）与普通执行单元（Worker）的协作规范、工具别名与寻址区分、权限与修订号（Revision）机制，以及常见故障排查方法。
 
 [返回中文首页](../README.md) · [English Usage Guide](usage.en.md) · [系统架构](architecture.md) · [迁移与清理](migration.md) · [验收记录](acceptance.md)
 
@@ -49,11 +49,11 @@
 
 显示名称、配置键、委派工具 ID 已统一到任务职责。以下是唯一受支持的标识，不提供旧角色键或旧工具名兼容。
 
-| 角色名称 | 配置键 | 委派工具 ID |
-| :--- | :--- | :--- |
-| 快速迭代 | `iterate` | `subagent_iterate` |
-| 特性实现 | `implement` | `subagent_implement` |
-| 分析规划 | `analyze` | `subagent_analyze` |
+| 角色名称 | 配置键 | 委派工具 ID | 绑定预设与权限边界 |
+| :--- | :--- | :--- | :--- |
+| 快速迭代 | `iterate` | `subagent_iterate` | `xingheng-worker`（受控读写 + Shell） |
+| 特性实现 | `implement` | `subagent_implement` | `xingheng-worker`（受控读写 + Shell） |
+| 分析规划 | `analyze` | `subagent_analyze` | `xingheng-analyst`（Schema 级纯只读） |
 
 使用界面或向助手描述任务时，使用角色名称即可。编写 JSON、调用工具或阅读源码时，必须使用上表中的实际标识，不要把中文角色名直接写成 JSON 键。
 
@@ -82,7 +82,7 @@
     "action": "read"
   }
   ```
-  返回结构包含 `version`（`"3.0.0"`）、`workers`（三路当前生效配置）、`revision`（当前 CAS 修订号字符串）、`providers`（含每个提供商下的 `models`、`efforts`、`defaultEffort`）、`preset`（`xingheng` 预设摘要）以及 `applies`（`"next-child"`）。
+  返回结构包含 `version`（`"3.1.0"`）、`workers`（三路当前生效配置）、`revision`（当前 CAS 修订号字符串）、`providers`（含每个提供商下的 `models`、`efforts`、`defaultEffort`）、`preset`（`xingheng` 预设摘要）以及 `applies`（`"next-child"`）。
 
 - **保存完整配置（必须传入最新 `expectedRevision` 与完整的三路 `workers`）**：
   ```json
@@ -117,7 +117,7 @@
     2. **验收标准（Acceptance Criteria）**：完成的明确定义。
     3. **验证权限（Validation Permission）**：`xingheng-worker` 默认 `Validation = NONE`（禁止擅自编译、运行测试、下载依赖或编写临时测试运行器）。若需要子代理运行特定验证命令，主控必须在 `prompt` 中明确授权该精确命令。
   - `cwd`（可选）：子代理初始工作目录。
-- **禁止调用时覆盖模型**：`subagent_iterate/implement/analyze` 已锁定 `modelSelection: false`，不接受 `provider` 或 `model` 参数，严格按当前已保存的星衡配置路由到 `xingheng-worker` 预设。
+- **禁止调用时覆盖模型**：`subagent_iterate/implement/analyze` 已锁定 `modelSelection: false`，不接受 `provider` 或 `model` 参数，按已保存配置取模型；迭代/实现路由到 `xingheng-worker`，分析路由到 `xingheng-analyst`。
 
 ### 3.2 控制普通子任务（按 `agent_id` 寻址）
 
@@ -127,11 +127,15 @@
 - **`subagent_message`**：向指定 `agent_id` 的直接子代理发送补充指令或继续其已完成的对话（传入 `{ agent_id: "<child-session-id>", message: "..." }`）。
 - **`subagent_interrupt`**：请求指定 `agent_id` 的子代理停止当前回合工作（传入 `{ agent_id: "<child-session-id>" }`）。
 
-### 3.3 执行单元的工具限制与软检查点（Soft Checkpoint）
+### 3.3 分工、验证与交接
 
-- **无外部网络搜索/浏览器/IM 工具**：`xingheng-worker` 没有 `web_search`、`web_fetch`、`research`、Playwright 浏览器或 IM 工具。如果任务需要外部网页资料或浏览器快照，**必须由主控先收集好证据**，再通过 `prompt` 传给执行单元。
-- **12 步 / 10 分钟软检查点**：当执行单元累计达到 **12 次工具调用或运行满 10 分钟**（以先观察到者为准），或连续两步无实质进展时，预设提示词要求执行单元完成当前安全动作，返回 `CHECKPOINT`（附带已完成部分、未决事项与下一步切片建议）并结束回合。
-- **完成与冻结（READY & FREEZE）**：满足验收条件后，执行单元返回 `READY`（列出修改的文件、实际运行的检查与未运行的检查），并立即冻结所有写入。若收到主控的 `FREEZE` 消息，执行单元必须停止一切编辑、编译与测试，仅汇报当前发现。
+- **分析规划**：仅代码读取与检索、父子通信；没有 write/edit/Shell/jobs/浏览器/网络搜索/IM/配置修改或委派工具。无法执行测试是设计行为，不应尝试通过其他工具绕过。
+- **特性实现**：按高内聚模块完成写入和测试编写，不按文件数机械分摊；默认不执行未授权验证。
+- **快速迭代**：已知问题的最小补丁，或执行主控明确授权的有限检查；不凭角色名推断实际速度。
+- 共用读写 Worker 并不意味着迭代和实现有不同的 OS 权限，两者的区别是任务契约与提示词，不是独立沙箱。
+- 复杂任务按“只读探路/规划 → 稳定公共接口 → 独立模块实现 → fresh 固定版本审查 → 主控统一验证”推进。不要把全部实现历史转发给审查者；应提供需求、diff、目标版本、约束与已知风险。
+- 并行分析仍读取同一共享工作树，没有自动快照隔离；需冻结写入或核对版本漂移。
+- READY/检查点/冻结是模型行为约定，不是硬性超时或验证强制闸门。交付需明确证据、改动范围、检查执行与未执行项、风险，主控核对后才能接受为完成。
 
 ---
 
@@ -194,9 +198,9 @@
 - **问题：安装后设置页没有「星衡 · 子代理配置」，或设置页顶部警告「星衡预设未激活」**
   - **原因**：`plugin_manager` 安装结果返回了 `application: "restart-required"`，或者浏览器页面尚未刷新。
   - **解决**：先重启原有的 DSH Host 服务进程（如果要求重启），然后刷新当前浏览器页面。不要启动另一个端口的替代服务。
-- **问题：升级到 `3.0.0` 后，在旧会话里看不到 `team_roster`、`spawn_teammate` 或 `subagent_message`**
+- **问题：升级到 `3.1.0` 后，在旧会话里看不到 `team_roster`、`spawn_teammate` 或 `subagent_message`**
   - **原因**：仍运行的 Agent 保留内存预设 revision，不会自动替换挂载列表；重启恢复则按日志中的预设 ID 解析当前定义。
-  - **解决**：确保 Host 已加载 `3.0.0`，然后点击 **新建会话** 并选择 **星衡 · 协作（`xingheng`）** 预设。
+  - **解决**：确保 Host 已加载 `3.1.0`，然后点击 **新建会话** 并选择 **星衡 · 协作（`xingheng`）** 预设。
 
 ### 5.2 配置保存与校验类问题
 
@@ -223,3 +227,10 @@
   - **解决**：遵循星衡协作规范，直接向用户如实报告该鉴权/配额/权限错误，**不要**将其当作模型失败而升级或切换到其他角色重试。
 
 > **别名可见性排查**：若已重启的新会话仍缺少 `team_*` 别名，但原生 `list_agents` / `send_message` / `interrupt_agent` 存在，可使用原生团队接口，并记录宿主版本、插件激活状态与工具目录供诊断。单凭模型说“没有工具”不能判断注册失败，也不能保证重建会话即可解决所有启动顺序问题。
+
+
+## 模型网关超时
+
+本次实际日志中的持续 504 发生在 `zero / gemini-4-argon / high` 的上游，Cloudflare 返回 `origin_gateway_timeout`，指源站未按时响应；不是 GitHub 7890 代理端口或本地测试失败。报错未证明唯一根因是模型推理时间，源站负载、内部等待、转发和超时配置均应由网关运维检查。
+
+先记录提供商/模型、时间、HTTP 状态及请求标识（不要上传凭据或完整会话），遵循响应中的退避提示，避免连续“继续”或无限自动重试。若用户允许换路线，显式选择可用提供商/模型；不要静默改写星衡三路保存配置。单纯增大客户端超时不保证越过源站/代理的服务端上限。

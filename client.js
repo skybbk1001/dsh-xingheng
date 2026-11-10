@@ -10,7 +10,7 @@ window.__ModuleLoader__.load({
         team: '团队协作已启用：在会话标题栏打开「智能体团队」查看成员与共享任务。创建队友支持全新／继承对话；原生队友沿用主控模型，以下三组配置仅控制普通子任务。',
         scope: '仅作用于「星衡 · 协作」预设。保存后，下一次创建的子代理使用新配置；已运行的子代理不变。',
         iterate: '快速迭代', implement: '特性实现', analyze: '分析规划',
-        iterateHelp: '局部修复、小改进、单点检查', implementHelp: '功能开发、接口实现、测试编写', analyzeHelp: '代码审查、架构分析、复杂问题诊断',
+        iterateHelp: '局部修复、最小补丁、执行授权验证（读写执行环境）', implementHelp: '内聚模块开发、接口实现、成套测试（读写执行环境）', analyzeHelp: '代码探索、架构规划、零上下文独立审查（纯只读环境）',
         provider: '提供商', model: '模型', effort: '推理强度', adapter: '原生默认（同模型可继承主控）',
         save: '保存配置', saving: '正在保存…', reload: '重新读取', loading: '正在读取实际配置…',
         dirty: '有未保存的更改', clean: '与已保存配置一致', saved: '已保存并回读确认；下一个子代理将使用新配置。',
@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
         team: 'Agent Teams is enabled. Open the Team panel in the session header for members and shared tasks. Teammates use fresh or forked context and inherit the lead model; the three routes below control ordinary subagents only.',
         scope: 'Only affects the Xingheng collaboration preset. Saved routes apply to the next child; running children are unchanged.',
         iterate: 'Quick iteration', implement: 'Feature implementation', analyze: 'Analysis and planning',
-        iterateHelp: 'Local fixes, small improvements and spot checks', implementHelp: 'Features, API implementation and test writing', analyzeHelp: 'Review, architecture analysis and complex debugging',
+        iterateHelp: 'Targeted fixes, minimal diffs and authorized checks (read-write worker)', implementHelp: 'Cohesive module features, APIs and test suites (read-write worker)', analyzeHelp: 'Code exploration, architecture planning and zero-context review (read-only analyst)',
         provider: 'Provider', model: 'Model', effort: 'Reasoning effort', adapter: 'Native default (may inherit lead effort)',
         save: 'Save configuration', saving: 'Saving…', reload: 'Reload', loading: 'Reading actual configuration…',
         dirty: 'Unsaved changes', clean: 'Matches saved configuration', saved: 'Saved and read back. The next child will use these routes.',
@@ -122,7 +122,7 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', disabled: busy, onClick: () => { if (!dirty || window.confirm(t('confirm'))) transfer(); } }, t('reload')),
               h('span', { className: 'xh-status', role: 'status' }, dirty ? t('dirty') : t('clean'))),
             snapshot ? h('div', { className: 'xh-fill' }, h('button', { type: 'button', disabled: busy, onClick: () => { setDraft(structuredClone(defaults)); setSuccess(false); } }, t('defaults')), h('span', { className: 'xh-help' }, t('defaultsHelp'))) : null,
-            h('footer', { className: 'xh-footer xh-help' }, `${t('version')} 3.0.0 · subagent_iterate / subagent_implement / subagent_analyze`));
+            h('footer', { className: 'xh-footer xh-help' }, `${t('version')} 3.1.0 · subagent_iterate / subagent_implement / subagent_analyze`));
         }
         ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'xingheng', order: 22, label: () => t('title') }, Panel));
       },

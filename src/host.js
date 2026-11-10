@@ -43,7 +43,7 @@ export default class Xingheng extends Service {
       providers.push({ id: provider.id, name: provider.name, models, ...(error ? { error } : {}) });
     }
     const presets = await this.ctx.agentPresets.list();
-    return { version: '3.0.0', workers, revision: revisionOf(workers), providers, preset: presets.find(p => p.id === 'xingheng') ?? null, applies: 'next-child' };
+    return { version: '3.1.0', workers, revision: revisionOf(workers), providers, preset: presets.find(p => p.id === 'xingheng') ?? null, applies: 'next-child' };
   }
   async operate(request, signal) {
     if (!request || typeof request !== 'object') throw new Error('Request must be an object');

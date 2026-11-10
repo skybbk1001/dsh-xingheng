@@ -2,6 +2,15 @@
 
 All notable changes are recorded here. Versions use semantic versioning.
 
+## 3.1.0 — 2026-11-10
+
+### Role-specialized execution
+- Route analysis to the dedicated `xingheng-analyst` preset, with filesystem mutation flags disabled and no shell/job registration. Iteration and implementation retain `xingheng-worker`.
+- Add Host-owned `worker-policy.js`: refresh masks on creation and blank-session preset selection, release on disposal, and guard non-allowlisted invocations. Resolve capabilities through the Host Agent registry instead of a separate copy of the scope library.
+- Add read/list/message-only native analyst controls and role-specific handoff guidance. Update Lead SOP for facts/planning, cohesive partitioning and independent fresh-context review.
+- Preserve 3.0 role keys, model routes and `/api/xingheng/v3`. Internal exports move to `./role-routing` and `./worker-policy`; update bundle declarations together.
+- Add actual DSH scoped-registry regression tests; 23 automated checks. Real acceptance is recorded separately in `docs/acceptance.md`.
+
 ## 3.0.0 — 2026-11-10
 
 ### Breaking role contract

@@ -18,7 +18,7 @@
 
 - **单一配置与校验路径**：所有 Host 端逻辑集中在 [`src/`](src/)。Web UI（`POST /api/xingheng/v3`）、Agent 工具（`xingheng_config`）与斜杠命令（`/xingheng`）必须共用同一个 `operate()` 校验与 `ConfigEditor` 双重 CAS 持久化路径。
 - **复用原生执行器与权限**：
-  - 普通子任务委派（[`src/role-agent.js`](src/role-agent.js)）与控制别名（[`src/controls.js`](src/controls.js)）必须直接委托给固定版本的 `@deepseek-ai/dsh-tool-subagent` 和 `@deepseek-ai/dsh-tool-subagent-control`，禁止自行重写子会话生命周期或血缘权限校验。
+  - 普通子任务委派（[`src/role-routing.js`](src/role-routing.js)）与控制别名（[`src/controls.js`](src/controls.js)）必须直接委托给固定版本的 `@deepseek-ai/dsh-tool-subagent` 和 `@deepseek-ai/dsh-tool-subagent-control`，禁止自行重写子会话生命周期或血缘权限校验。
   - 原生智能体团队兼容别名（[`src/team-controls.js`](src/team-controls.js)）仅在 `agentTeams.tryMembership(agent)` 成立的成员作用域内注册 `team_roster`、`team_message`、`team_interrupt`，保持原生执行器、参数 Schema 与调用者身份不变，禁止给普通 `xingheng-worker` 授予团队权限。
 - **便携性与客户端约束**：
   - [`cordis.patch.yml`](cordis.patch.yml) 中禁止出现任何本地绝对路径（如 `/home/...`）。
@@ -54,7 +54,7 @@ npm run pack:check
 
 - **Single Validation & Persistence Path**: Keep Host operations in [`src/`](src/). The Web UI (`POST /api/xingheng/v3`), agent tool (`xingheng_config`), and slash command (`/xingheng`) must share the exact same `operate()` validation and serialized `ConfigEditor` double-CAS persistence path.
 - **Native Executor & Authority Reuse**:
-  - Ordinary role delegation ([`src/role-agent.js`](src/role-agent.js)) and ordinary control aliases ([`src/controls.js`](src/controls.js)) must wrap the pinned native `@deepseek-ai/dsh-tool-subagent` and `@deepseek-ai/dsh-tool-subagent-control` packages without reimplementing child lifecycle or lineage checks.
+  - Ordinary role delegation ([`src/role-routing.js`](src/role-routing.js)) and ordinary control aliases ([`src/controls.js`](src/controls.js)) must wrap the pinned native `@deepseek-ai/dsh-tool-subagent` and `@deepseek-ai/dsh-tool-subagent-control` packages without reimplementing child lifecycle or lineage checks.
   - Team control aliases ([`src/team-controls.js`](src/team-controls.js): `team_roster`, `team_message`, `team_interrupt`) must install only on agents with verified `agentTeams.tryMembership(agent)`, preserving native executors, schemas, and caller authority while never granting Team tools to ordinary `xingheng-worker` subagents.
 - **Portability & Client Constraints**:
   - Never hardcode local absolute paths (such as `/home/...`) in [`cordis.patch.yml`](cordis.patch.yml).
@@ -73,3 +73,10 @@ npm run pack:check
 - Install and verify using the assistant's `plugin_manager` tool against the existing DSH Web GUI rather than spawning replacement servers.
 - Clearly distinguish unit/mock coverage from real browser and live model acceptance in [`docs/acceptance.md`](docs/acceptance.md) and [`docs/migration.md`](docs/migration.md).
 - Authorized collaborators may open pull requests against the [private repository](https://github.com/skybbk1001/dsh-xingheng). Never include API keys, cookies, session logs, launch tokens, or fabricated model price/performance rankings in commits, issues, or pull requests.
+
+
+## 3.1 隔离回归要求 / Isolation regressions
+
+- 策略经 Host 服务按实际 Agent 查询，不从插件私有 scope 库反解宿主身份。
+- 使用真实 DSH Tools/Scope 注册表测试：保留 read、遮蔽继承的 mutation/browser 工具、选择其他预设后解除掩码、guard 拒绝近层逃逸、卸载无残留。只用 mock 检查 allow 数组不足以证明隔离。
+- Keep actual-registry tests for preserved reads, inherited capability masking, blank-session selection, nearer-scope execution denial and lifecycle cleanup. Do not substitute an allowlist-array mock for these checks.

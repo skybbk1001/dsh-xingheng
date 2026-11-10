@@ -102,3 +102,31 @@
 - 请求头中的角色委派工具集合精确为三个新名，不含任何旧角色工具名。旧的运行中 Agent 仍可能持有旧 revision；未改写历史会话。
 - 首轮主控 Gemini 网关 503 在任何委派前失败；仅验收会话的主控改用 a6/Sol 后完成流程，保存的角色路线未作替换。
 - 热加载曾因旧模块缓存导致 schema/default 和 role 枚举混用，已通过新职责模块路径解决，随后确认预设无 broken 诊断且新会话实际创建/调用成功。插件管理器仍报告 restart-required/unmanaged-plugin：当前进程功能已验收，不将它说成 applied；建议结束工作后完整重启，以清理旧内存 revision。
+
+
+## 3.1.0 分工隔离验收 — 2026-11-11（Asia/Shanghai）
+
+### 发现与修复（保留失败事实）
+
+- 首轮 allowlist mock 通过不能证明真实隔离：热加载分析调用曾仍进入旧 worker；空白会话切换不再触发 agent/created，导致外部和团队工具残留。文件写入还需通过 tool-fs 的 write/edit/applyPatch=false 明确关闭。
+- 初次预设作用域过滤和 Host 策略实现错误地读了插件自己的 scope 库父链。该库身份以模块私有 Symbol/WeakMap 保存，跨安装实例不会共享，结果实际分析目录只剩 working_directory。分析回复里虽然带有 marker，但没有读取，明确判为未通过。
+- 最终运行时代码移除 scope 库依赖，直接通过宿主 tools.definitions(agent) 枚举实际能力，经 agent.ctx 安装 allowlist；创建、选择、销毁均有生命周期处理；guard 单调拒绝近层非允许调用。scope 库仅用于真实注册表测试夹具，不用于运行时推断身份。
+- 用户重启后再次复核发现仍缺 read，从而确认不是只靠重启可解决；上述代码修复后插件管理器返回 application=applied、warnings=[]。
+
+### 最终通过项
+
+- npm run verify：23/23，通过原生 Tools/Scope 注册表测试（不是 allow 数组 mock）。覆盖空白会话选择保留 read、继承能力遮蔽、切换离开解除限制、近层工具 guard 拒绝和卸载清理，以及原有路由/CAS/团队回归。
+- 新建星衡会话实际调用 subagent_analyze，子预设为 xingheng-analyst，使用已保存的 Terra/high。其 request/header 工具精确为 glob、grep、list_agents、read、read_image、send_message、working_directory；不含 write/edit/Shell/jobs/浏览器/搜索/IM/配置/Team 或再次委派工具。
+- 分析子代理实际只执行 read，读取 roles.js 前6行，返回 iterate/implement/analyze 及 HOST_SCOPE_ANALYST_OK；没有根据 marker 猜测读取成功。
+- 随后实际调用 iterate，子预设为 xingheng-worker，工具目录仍包含 read/write/edit/bash/jobs 和父子通信，不含外部浏览器/搜索/配置/团队。按只读验收指令实际 read 后以原生 send_message 汇报 HOST_SCOPE_WORKER_OK。
+- 主控最终回复 XINGHENG_HOST_SCOPE_OK。保存的三路路线、权限模式和模型配置未改动；验收只使用已有文件读取，没有制造写入。
+- 真实 GUI：配置端点 HTTP200、版本3.1.0、三个预设无 broken；设置页显示分析“纯只读环境”帮助和3.1.0页脚。历史截图没有被当作最新版本 UI 截图。
+
+### 504 与覆盖边界
+
+- 多次中断发生在 zero/gemini-4-argon/high 上游；错误正文为 Cloudflare origin_gateway_timeout，源站未按时响应。没有据此宣称已定位具体内部队列或唯一根因，没有改用户的网关、全局重试策略或角色模型。
+- 最终验收仅主控选择 a6/Sol，角色仍使用保存的提供商/模型。没有以跨模型重试绕过文件权限。
+- 分析工具过滤不是 OS 沙箱：可读获准文件、可发送消息；受信插件近层注册可能仍显示，但不在允许表的调用会被 guard 拒绝。只读并行没有快照隔离。
+- 本轮没有运行写入中断、重测所有网关或多框架性能基准；不声称更低费用或更高成功率。implement 与 iterate 共用执行预设，其新行为区别主要为任务契约/SOP；implement 参数分流由原生执行器回归覆盖。
+
+- 补充真实空白会话选择验收：先创建空白协作会话再选择分析预设，只执行 read 成功得到三角色值并返回 PRESET_SWITCH_READ_OK，证明不依赖再次触发 agent/created 才能保留读取能力。原生顶层 Team 近层工具可能仍显示，由 guard 拒绝非允许执行。
