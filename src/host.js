@@ -1,6 +1,6 @@
 import { Service } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import { ROLES, DEFAULT_WORKERS, clone, parseWorkers, revisionOf, saveWorkers } from './config.js';
+import { ROLES, DEFAULT_WORKERS, clone, parseWorkers, revisionOf, saveWorkers } from './roles.js';
 
 const Route = z.object({
   provider: z.string().min(1).required(),
@@ -8,10 +8,10 @@ const Route = z.object({
   effort: z.string().default(''),
 });
 export const Config = z.object({
-  workers: z.object({ fast: Route.required(), text: Route.required(), long: Route.required() }).default(DEFAULT_WORKERS).volatile(),
+  workers: z.object({ iterate: Route.required(), implement: Route.required(), analyze: Route.required() }).default(DEFAULT_WORKERS).volatile(),
 });
 export const name = 'xingheng';
-export const API_PATH = '/api/xingheng/v2';
+export const API_PATH = '/api/xingheng/v3';
 
 export default class Xingheng extends Service {
   static inject = ['llm', 'configEditor', 'connection', 'tools', 'commands', 'agentPresets'];
@@ -43,7 +43,7 @@ export default class Xingheng extends Service {
       providers.push({ id: provider.id, name: provider.name, models, ...(error ? { error } : {}) });
     }
     const presets = await this.ctx.agentPresets.list();
-    return { version: '2.1.0', workers, revision: revisionOf(workers), providers, preset: presets.find(p => p.id === 'xingheng') ?? null, applies: 'next-child' };
+    return { version: '3.0.0', workers, revision: revisionOf(workers), providers, preset: presets.find(p => p.id === 'xingheng') ?? null, applies: 'next-child' };
   }
   async operate(request, signal) {
     if (!request || typeof request !== 'object') throw new Error('Request must be an object');
@@ -79,7 +79,7 @@ export default class Xingheng extends Service {
         type: 'object', additionalProperties: false,
         properties: {
           action: { type: 'string', enum: ['read', 'save'] },
-          workers: { type: 'object', description: 'Complete fast/text/long map with provider, model and effort; empty effort uses the adapter default.' },
+          workers: { type: 'object', description: 'Complete iterate/implement/analyze map with provider, model and effort; empty effort follows native inheritance/defaults.' },
           expectedRevision: { type: 'string', description: 'Revision from read; required when saving to reject concurrent edits.' },
         }, required: ['action'],
       },

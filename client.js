@@ -9,8 +9,8 @@ window.__ModuleLoader__.load({
         title: '星衡 · 子代理配置', subtitle: '按任务角色选择模型与推理强度。主控模型仍在会话中设置。',
         team: '团队协作已启用：在会话标题栏打开「智能体团队」查看成员与共享任务。创建队友支持全新／继承对话；原生队友沿用主控模型，以下三组配置仅控制普通子任务。',
         scope: '仅作用于「星衡 · 协作」预设。保存后，下一次创建的子代理使用新配置；已运行的子代理不变。',
-        fast: '快速迭代', text: '特性实现', long: '分析规划',
-        fastHelp: '局部修复、小改进、单点检查', textHelp: '功能开发、接口实现、测试编写', longHelp: '代码审查、架构分析、复杂问题诊断',
+        iterate: '快速迭代', implement: '特性实现', analyze: '分析规划',
+        iterateHelp: '局部修复、小改进、单点检查', implementHelp: '功能开发、接口实现、测试编写', analyzeHelp: '代码审查、架构分析、复杂问题诊断',
         provider: '提供商', model: '模型', effort: '推理强度', adapter: '原生默认（同模型可继承主控）',
         save: '保存配置', saving: '正在保存…', reload: '重新读取', loading: '正在读取实际配置…',
         dirty: '有未保存的更改', clean: '与已保存配置一致', saved: '已保存并回读确认；下一个子代理将使用新配置。',
@@ -23,8 +23,8 @@ window.__ModuleLoader__.load({
         title: 'Xingheng · Subagent configuration', subtitle: 'Choose models and reasoning efforts by role. The lead model stays in session controls.',
         team: 'Agent Teams is enabled. Open the Team panel in the session header for members and shared tasks. Teammates use fresh or forked context and inherit the lead model; the three routes below control ordinary subagents only.',
         scope: 'Only affects the Xingheng collaboration preset. Saved routes apply to the next child; running children are unchanged.',
-        fast: 'Quick iteration', text: 'Feature implementation', long: 'Analysis and planning',
-        fastHelp: 'Local fixes, small improvements and spot checks', textHelp: 'Features, API implementation and test writing', longHelp: 'Review, architecture analysis and complex debugging',
+        iterate: 'Quick iteration', implement: 'Feature implementation', analyze: 'Analysis and planning',
+        iterateHelp: 'Local fixes, small improvements and spot checks', implementHelp: 'Features, API implementation and test writing', analyzeHelp: 'Review, architecture analysis and complex debugging',
         provider: 'Provider', model: 'Model', effort: 'Reasoning effort', adapter: 'Native default (may inherit lead effort)',
         save: 'Save configuration', saving: 'Saving…', reload: 'Reload', loading: 'Reading actual configuration…',
         dirty: 'Unsaved changes', clean: 'Matches saved configuration', saved: 'Saved and read back. The next child will use these routes.',
@@ -34,11 +34,11 @@ window.__ModuleLoader__.load({
         version: 'Version', pending: 'Select an advertised model and reasoning effort',
       },
     };
-    const roles = ['fast', 'text', 'long'];
+    const roles = ['iterate', 'implement', 'analyze'];
     const defaults = {
-      fast: { provider: 'zero', model: 'deepseek-v4.1-flash-1017', effort: 'high' },
-      text: { provider: 'zero', model: 'gpt-6.1-sol', effort: 'medium' },
-      long: { provider: 'zero', model: 'gpt-6.1-terra', effort: 'high' },
+      iterate: { provider: 'zero', model: 'deepseek-v4.1-flash-1017', effort: 'high' },
+      implement: { provider: 'zero', model: 'gpt-6.1-sol', effort: 'medium' },
+      analyze: { provider: 'zero', model: 'gpt-6.1-terra', effort: 'high' },
     };
     const styles = `
       .xh-page{color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6;max-width:820px;margin:0 auto;padding:4px 0 24px}
@@ -73,7 +73,7 @@ window.__ModuleLoader__.load({
             abort.current = new AbortController();
             try {
               // Relative URL preserves a reverse proxy's mount prefix; same-origin cookie authenticates.
-              const res = await fetch('./api/xingheng/v2', { method: body ? 'POST' : 'GET', cache: 'no-store', credentials: 'same-origin', signal: abort.current.signal, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
+              const res = await fetch('./api/xingheng/v3', { method: body ? 'POST' : 'GET', cache: 'no-store', credentials: 'same-origin', signal: abort.current.signal, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
               const data = await res.json();
               if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
               if (alive.current) { setSnapshot(data); setDraft(structuredClone(data.workers)); setSuccess(Boolean(body)); }
@@ -122,7 +122,7 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', disabled: busy, onClick: () => { if (!dirty || window.confirm(t('confirm'))) transfer(); } }, t('reload')),
               h('span', { className: 'xh-status', role: 'status' }, dirty ? t('dirty') : t('clean'))),
             snapshot ? h('div', { className: 'xh-fill' }, h('button', { type: 'button', disabled: busy, onClick: () => { setDraft(structuredClone(defaults)); setSuccess(false); } }, t('defaults')), h('span', { className: 'xh-help' }, t('defaultsHelp'))) : null,
-            h('footer', { className: 'xh-footer xh-help' }, `${t('version')} 2.1.0 · subagent_fast / subagent_text / subagent_long`));
+            h('footer', { className: 'xh-footer xh-help' }, `${t('version')} 3.0.0 · subagent_iterate / subagent_implement / subagent_analyze`));
         }
         ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'xingheng', order: 22, label: () => t('title') }, Panel));
       },

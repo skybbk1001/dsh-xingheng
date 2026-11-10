@@ -1,6 +1,6 @@
 # 星衡（Xingheng）详细使用与故障排查指南
 
-本指南详细介绍 `@local/dsh-xingheng` `2.1.0` 的安装流程、三路普通子任务配置接口、原生智能体团队（Agent Teams）与普通执行单元（Worker）的协作规范、工具别名与寻址区分、权限与修订号（Revision）机制，以及常见故障排查方法。
+本指南详细介绍 `@local/dsh-xingheng` `3.0.0` 的安装流程、三路普通子任务配置接口、原生智能体团队（Agent Teams）与普通执行单元（Worker）的协作规范、工具别名与寻址区分、权限与修订号（Revision）机制，以及常见故障排查方法。
 
 [返回中文首页](../README.md) · [English Usage Guide](usage.en.md) · [系统架构](architecture.md) · [迁移与清理](migration.md) · [验收记录](acceptance.md)
 
@@ -39,11 +39,23 @@
 
 ### 2.1 三路角色定义与默认初始组合
 
-| 角色键名 | 界面中文名称 | 界面英文名称 | 对应委派工具 | 典型任务场景 | 代码内置初始组合（`DEFAULT_WORKERS`） |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`fast`** | 快速迭代 | Quick iteration | `subagent_fast` | 局部修复、小改进、单点检查 | `zero` / `deepseek-v4.1-flash-1017` / `high` |
-| **`text`** | 特性实现 | Feature implementation | `subagent_text` | 功能开发、接口实现、测试编写 | `zero` / `gpt-6.1-sol` / `medium` |
-| **`long`** | 分析规划 | Analysis and planning | `subagent_long` | 代码审查、架构分析、复杂问题诊断 | `zero` / `gpt-6.1-terra` / `high` |
+| 角色名称 | 英文名称 | 典型任务场景 | 初始组合 |
+| :--- | :--- | :--- | :--- |
+| **快速迭代** | Quick iteration | 局部修复、小改进、单点检查 | `zero` / `deepseek-v4.1-flash-1017` / `high` |
+| **特性实现** | Feature implementation | 功能开发、接口实现、测试编写 | `zero` / `gpt-6.1-sol` / `medium` |
+| **分析规划** | Analysis and planning | 代码审查、架构分析、复杂问题诊断 | `zero` / `gpt-6.1-terra` / `high` |
+
+#### 角色接口标识
+
+显示名称、配置键、委派工具 ID 已统一到任务职责。以下是唯一受支持的标识，不提供旧角色键或旧工具名兼容。
+
+| 角色名称 | 配置键 | 委派工具 ID |
+| :--- | :--- | :--- |
+| 快速迭代 | `iterate` | `subagent_iterate` |
+| 特性实现 | `implement` | `subagent_implement` |
+| 分析规划 | `analyze` | `subagent_analyze` |
+
+使用界面或向助手描述任务时，使用角色名称即可。编写 JSON、调用工具或阅读源码时，必须使用上表中的实际标识，不要把中文角色名直接写成 JSON 键。
 
 > **重要声明**：上述 `DEFAULT_WORKERS` 仅作为初始默认值或「填入初始组合」按钮的草稿模板，**不代表官方对模型质量、推理速度或调用价格的排名建议**。如果当前环境的模型目录中未注册上述提供商或模型，保存会被拒绝，必须改选当前目录中实际存在的模型。
 
@@ -57,7 +69,7 @@
    - **推理强度（Reasoning effort）**：来自 `llm.resolveModelInfo(provider, model)` 声明支持的推理档位，或选择 **「原生默认（同模型可继承主控）」**（空字符串 `""`）。
 4. 观察底部状态栏：
    - 修改后状态显示为 **「有未保存的更改」**。
-   - 点击 **「保存配置」**，请求发送至 `./api/xingheng/v2`。保存成功后，界面使用服务端回读的最新快照更新状态，并提示 **「已保存并回读确认；下一个子代理将使用新配置。」**
+   - 点击 **「保存配置」**，请求发送至 `./api/xingheng/v3`。保存成功后，界面使用服务端回读的最新快照更新状态，并提示 **「已保存并回读确认；下一个子代理将使用新配置。」**
    - 若要放弃草稿修改，点击 **「重新读取」** 并确认弹窗。
 
 ### 2.3 方式二：通过 `xingheng_config` 助手工具配置
@@ -70,7 +82,7 @@
     "action": "read"
   }
   ```
-  返回结构包含 `version`（`"2.1.0"`）、`workers`（三路当前生效配置）、`revision`（当前 CAS 修订号字符串）、`providers`（含每个提供商下的 `models`、`efforts`、`defaultEffort`）、`preset`（`xingheng` 预设摘要）以及 `applies`（`"next-child"`）。
+  返回结构包含 `version`（`"3.0.0"`）、`workers`（三路当前生效配置）、`revision`（当前 CAS 修订号字符串）、`providers`（含每个提供商下的 `models`、`efforts`、`defaultEffort`）、`preset`（`xingheng` 预设摘要）以及 `applies`（`"next-child"`）。
 
 - **保存完整配置（必须传入最新 `expectedRevision` 与完整的三路 `workers`）**：
   ```json
@@ -78,9 +90,9 @@
     "action": "save",
     "expectedRevision": "[{\"provider\":\"zero\",\"model\":\"deepseek-v4.1-flash-1017\",\"effort\":\"high\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-sol\",\"effort\":\"medium\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-terra\",\"effort\":\"high\"}]",
     "workers": {
-      "fast": { "provider": "zero", "model": "deepseek-v4.1-flash-1017", "effort": "medium" },
-      "text": { "provider": "zero", "model": "gpt-6.1-sol", "effort": "medium" },
-      "long": { "provider": "zero", "model": "gpt-6.1-terra", "effort": "high" }
+      "iterate": { "provider": "zero", "model": "deepseek-v4.1-flash-1017", "effort": "medium" },
+      "implement": { "provider": "zero", "model": "gpt-6.1-sol", "effort": "medium" },
+      "analyze": { "provider": "zero", "model": "gpt-6.1-terra", "effort": "high" }
     }
   }
   ```
@@ -98,14 +110,14 @@
 
 ### 3.1 启动与模型路由规则
 
-- 主控调用 `subagent_fast`、`subagent_text` 或 `subagent_long`，传入：
+- 主控调用 `subagent_iterate`、`subagent_implement` 或 `subagent_analyze`，传入：
   - `description`：3–5 个词的简短任务标签（用于界面展示）。
   - `prompt`：**完整、自包含的任务说明**。因为普通子任务使用 `spawn`（全新上下文），子代理看不到主控的历史对话，必须在 `prompt` 中明确给出：
     1. **写入范围（Write Scope）**：允许修改的具体文件路径（未列出的路径一律只读）。
     2. **验收标准（Acceptance Criteria）**：完成的明确定义。
     3. **验证权限（Validation Permission）**：`xingheng-worker` 默认 `Validation = NONE`（禁止擅自编译、运行测试、下载依赖或编写临时测试运行器）。若需要子代理运行特定验证命令，主控必须在 `prompt` 中明确授权该精确命令。
   - `cwd`（可选）：子代理初始工作目录。
-- **禁止调用时覆盖模型**：`subagent_fast/text/long` 已锁定 `modelSelection: false`，不接受 `provider` 或 `model` 参数，严格按当前已保存的星衡配置路由到 `xingheng-worker` 预设。
+- **禁止调用时覆盖模型**：`subagent_iterate/implement/analyze` 已锁定 `modelSelection: false`，不接受 `provider` 或 `model` 参数，严格按当前已保存的星衡配置路由到 `xingheng-worker` 预设。
 
 ### 3.2 控制普通子任务（按 `agent_id` 寻址）
 
@@ -182,9 +194,9 @@
 - **问题：安装后设置页没有「星衡 · 子代理配置」，或设置页顶部警告「星衡预设未激活」**
   - **原因**：`plugin_manager` 安装结果返回了 `application: "restart-required"`，或者浏览器页面尚未刷新。
   - **解决**：先重启原有的 DSH Host 服务进程（如果要求重启），然后刷新当前浏览器页面。不要启动另一个端口的替代服务。
-- **问题：升级到 `2.1.0` 后，在旧会话里看不到 `team_roster`、`spawn_teammate` 或 `subagent_message`**
+- **问题：升级到 `3.0.0` 后，在旧会话里看不到 `team_roster`、`spawn_teammate` 或 `subagent_message`**
   - **原因**：仍运行的 Agent 保留内存预设 revision，不会自动替换挂载列表；重启恢复则按日志中的预设 ID 解析当前定义。
-  - **解决**：确保 Host 已加载 `2.1.0`，然后点击 **新建会话** 并选择 **星衡 · 协作（`xingheng`）** 预设。
+  - **解决**：确保 Host 已加载 `3.0.0`，然后点击 **新建会话** 并选择 **星衡 · 协作（`xingheng`）** 预设。
 
 ### 5.2 配置保存与校验类问题
 
@@ -194,18 +206,18 @@
 - **问题：点击保存或调用 `xingheng_config` 返回 `HTTP 409` / `Configuration conflict`**
   - **原因**：双阶段 CAS 检测到当前提交的 `expectedRevision` 与服务器最新保存的配置不一致（例如同时在另一个标签页或通过命令修改了配置）。
   - **解决**：在 UI 中点击 **「重新读取」**（或在工具中先执行 `action: "read"` 获取最新 `revision`），在最新快照基础上重新修改并保存。
-- **问题：POST `/api/xingheng/v2` 返回 `HTTP 400` / `413` / `415`**
+- **问题：POST `/api/xingheng/v3` 返回 `HTTP 400` / `413` / `415`**
   - **原因**：
-    - `400`：缺少 `fast`/`text`/`long` 任一角色、包含未知字段、ID 含有首尾空格，或所选提供商/模型/推理强度不被当前 `llm` 服务支持。
+    - `400`：缺少 `iterate`/`implement`/`analyze` 任一角色、包含未知字段、ID 含有首尾空格，或所选提供商/模型/推理强度不被当前 `llm` 服务支持。
     - `413`：解析后的 JSON 再序列化后超过 `12000` 个 JavaScript 字符单元；不是严格的 UTF-8 字节限制。
     - `415`：POST 请求未设置 `Content-Type: application/json`。
   - **解决**：核对请求头与三路完整结构，确保所有 ID 与 `action: "read"` 返回的 `providers` 目录严格一致。
 
 ### 5.3 委派与团队协作类问题
 
-- **问题：调用 `subagent_fast/text/long` 时传入 `model` 参数被拒绝（`selection is disabled`）**
+- **问题：调用 `subagent_iterate/implement/analyze` 时传入 `model` 参数被拒绝（`selection is disabled`）**
   - **原因**：星衡故意锁定了 `modelSelection: false`，防止主控在调用参数中绕过用户在 UI 中设定的角色模型路由。
-  - **解决**：移除调用参数中的 `provider`/`model` 字段；若用户确实要求更换某角色的模型，先通过设置页或 `xingheng_config` 保存新路由，再调用 `subagent_fast/text/long`。
+  - **解决**：移除调用参数中的 `provider`/`model` 字段；若用户确实要求更换某角色的模型，先通过设置页或 `xingheng_config` 保存新路由，再调用 `subagent_iterate/implement/analyze`。
 - **问题：模型遇到 API 401/403 鉴权失败、配额耗尽（Quota）或沙箱权限拒绝时，主控试图换用其他子代理角色重试**
   - **原因**：鉴权、配额与沙箱权限属于基础设施或策略阻断（Infrastructure / Policy Blocker），并非模型能力不足。
   - **解决**：遵循星衡协作规范，直接向用户如实报告该鉴权/配额/权限错误，**不要**将其当作模型失败而升级或切换到其他角色重试。

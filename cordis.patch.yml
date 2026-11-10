@@ -100,7 +100,7 @@
                 only the Lead creates or interrupts teammates. Use team_roster/team_message/team_interrupt (native Team aliases) for roster, messaging
                 and interrupts. Team tools address member names (target),
                 while ordinary subagent_message/subagent_list/subagent_interrupt address child session IDs.
-                Use subagent_fast for bounded fixes, subagent_text for features, subagent_long for analysis;
+                Use subagent_iterate for bounded fixes, subagent_implement for features, subagent_analyze for analysis;
                 their models are configured in Settings > Xingheng. Do not substitute or change routes
                 unless asked. Ordinary workers have no browser/search/IM tools; gather evidence for them.
                 Record shared work as tasks with acceptance criteria, disjoint write scopes and dependencies.
@@ -221,18 +221,18 @@
             config:
               - id: xingheng-subagent-controls
                 name: '@local/dsh-xingheng/controls'
-              - id: tool-subagent-fast
-                name: '@local/dsh-xingheng/delegation'
+              - id: tool-subagent-iterate
+                name: '@local/dsh-xingheng/role-agent'
                 config:
-                  role: fast
-              - id: tool-subagent-text
-                name: '@local/dsh-xingheng/delegation'
+                  role: iterate
+              - id: tool-subagent-implement
+                name: '@local/dsh-xingheng/role-agent'
                 config:
-                  role: text
-              - id: tool-subagent-long
-                name: '@local/dsh-xingheng/delegation'
+                  role: implement
+              - id: tool-subagent-analyze
+                name: '@local/dsh-xingheng/role-agent'
                 config:
-                  role: long
+                  role: analyze
           - id: tool-ask-user
             name: '@deepseek-ai/dsh-tool-ask-user'
           - id: tool-todo

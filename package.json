@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-xingheng",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "Xingheng: persistent, role-based subagent model configuration for DeepSeek Harness.",
   "type": "module",
   "license": "MIT",
@@ -14,13 +14,13 @@
   },
   "exports": {
     ".": "./src/host.js",
-    "./delegation": "./src/delegation.js",
     "./policy": "./src/policy.js",
     "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
     "./controls": "./src/controls.js",
-    "./team-controls": "./src/team-controls.js"
+    "./team-controls": "./src/team-controls.js",
+    "./role-agent": "./src/role-agent.js"
   },
   "files": [
     "src/",

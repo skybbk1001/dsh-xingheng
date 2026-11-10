@@ -2,6 +2,14 @@
 
 All notable changes are recorded here. Versions use semantic versioning.
 
+## 3.0.0 — 2026-11-10
+
+### Breaking role contract
+- Replace role keys with `iterate`, `implement`, `analyze` and delegation tools with `subagent_iterate`, `subagent_implement`, `subagent_analyze`.
+- Rename the role implementation modules to `roles.js` and `role-agent.js`; no legacy parser fallback, tool alias or old module export is retained.
+- Move the authenticated configuration endpoint to `/api/xingheng/v3`; `/v2` is no longer registered.
+- Update UI dictionaries, presets, prompt guidance, JSON examples and rejection tests together. Saved role routes must be explicitly rewritten using the new keys before upgrade.
+
 ## 2.1.0 — 2026-11-10
 
 ### Agent Teams

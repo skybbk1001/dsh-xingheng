@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Service } from '@deepseek-ai/cordis';
 import Xingheng from '../src/host.js';
-import { DEFAULT_WORKERS, clone, revisionOf } from '../src/config.js';
+import { DEFAULT_WORKERS, clone, revisionOf } from '../src/roles.js';
 
 function fixture() {
   let workers = clone(DEFAULT_WORKERS);
@@ -29,8 +29,8 @@ function fixture() {
 test('Host registers one shared operation for authenticated Fetch, tool and command; effects dispose', async () => {
   const f = fixture();
   await Xingheng.prototype[Service.init].call(f.service);
-  const endpoint = f.routes.get('/api/xingheng/v2');
-  const res = await endpoint.fetch(new Request('http://fixture/api/xingheng/v2'));
+  const endpoint = f.routes.get('/api/xingheng/v3');
+  const res = await endpoint.fetch(new Request('http://fixture/api/xingheng/v3'));
   assert.equal(res.status, 200);
   const snapshot = await res.json();
   assert.equal(snapshot.revision, revisionOf(DEFAULT_WORKERS));
@@ -44,18 +44,32 @@ test('Host registers one shared operation for authenticated Fetch, tool and comm
 });
 test('HTTP save, readback, stale write, invalid effort and wrong content type', async () => {
   const f = fixture(); await Xingheng.prototype[Service.init].call(f.service);
-  const endpoint = f.routes.get('/api/xingheng/v2');
-  const post = body => endpoint.fetch(new Request('http://fixture/api/xingheng/v2', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) }));
-  const workers = clone(DEFAULT_WORKERS); workers.fast.effort = 'medium';
+  const endpoint = f.routes.get('/api/xingheng/v3');
+  const post = body => endpoint.fetch(new Request('http://fixture/api/xingheng/v3', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) }));
+  const workers = clone(DEFAULT_WORKERS); workers.iterate.effort = 'medium';
   const request = { action:'save', workers, expectedRevision:revisionOf(DEFAULT_WORKERS) };
   const saved = await post(request);
   assert.equal(saved.status, 200);
-  assert.equal((await saved.json()).workers.fast.effort, 'medium');
+  assert.equal((await saved.json()).workers.iterate.effort, 'medium');
   assert.equal((await post(request)).status, 409);
-  workers.fast.effort = 'unsupported';
+  workers.iterate.effort = 'unsupported';
   const invalid = await post({ ...request, expectedRevision:revisionOf(f.service.workers()) });
   assert.equal(invalid.status, 400);
-  assert.equal(f.service.workers().fast.effort, 'medium');
-  const type = await endpoint.fetch(new Request('http://fixture/api/xingheng/v2', { method:'POST', body:'{}' }));
+  assert.equal(f.service.workers().iterate.effort, 'medium');
+  const type = await endpoint.fetch(new Request('http://fixture/api/xingheng/v3', { method:'POST', body:'{}' }));
   assert.equal(type.status, 415);
+});
+
+
+test('v3 rejects legacy worker keys without changing routes and registers no v2 endpoint', async () => {
+  const f = fixture(); await Xingheng.prototype[Service.init].call(f.service);
+  assert.equal(f.routes.has('/api/xingheng/v2'), false);
+  const legacy = { fast: DEFAULT_WORKERS.iterate, text: DEFAULT_WORKERS.implement, long: DEFAULT_WORKERS.analyze };
+  const response = await f.routes.get('/api/xingheng/v3').fetch(new Request('http://fixture/api/xingheng/v3', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'save', expectedRevision: revisionOf(DEFAULT_WORKERS), workers: legacy }),
+  }));
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /exactly iterate, implement and analyze/);
+  assert.deepEqual(f.service.workers(), DEFAULT_WORKERS);
 });

@@ -1,8 +1,8 @@
-# 验收记录 — 2.0.0
+# 验收记录
 
 日期：2026-11-10（Asia/Shanghai）。环境：DSH 0.2.2-rc.1，Node v24.21.0，当前 Web profile。测试目标是原有 3080 GUI，没有另起替代服务器。
 
-## 结果
+## 2.0.0 历史结果
 
 | 层级 | 检查 | 结果与边界 |
 |---|---|---|
@@ -87,3 +87,18 @@
 - 在该进程提供的现有 3080 GUI 中请求 `/api/xingheng/v2`，回读版本 2.1.0、预设 `xingheng`；三路配置仍为 Flash/high、Sol/medium、Terra/high。
 - 独立冷组合退出 0，stderr 为空，无旧版路径诊断。
 - 重启后新建的文档会话请求记录包含原生团队创建、任务板和等待工具，以及三类普通委派和带前缀的普通控制工具。本次为读取复核，没有重新执行完整团队、fork 或模型能力验收，前述历史结果保持原日期与范围。
+
+
+## 3.0.0 底层角色重命名验收 — 2026-11-10
+
+当前角色契约只有 `iterate / implement / analyze`，委派工具只有 `subagent_iterate / subagent_implement / subagent_analyze`。上文 2.x 内容是历史证据，保留原命名，不代表当前兼容接口。
+
+- 源码、Host Config schema、客户端字典、preset 条目及 persona、配置工具描述、API JSON、模块导出和当前文档均使用新命名。核心模块已改为 `roles.js`、`role-agent.js`，旧模块文件和旧导出移除。
+- 单元与原生执行器集成回归 19/19 通过：旧角色对象、混合新旧键、旧角色插件配置被拒绝；只注册三个新委派工具；Host 只注册 v3 配置端点。
+- 当前保存值通过官方 Settings/ConfigEditor 清理旧键覆盖并重新保存为新键。模型与推理强度保持 Flash/high、Sol/medium、Terra/high，独立冷组合确认落盘新键且 stderr 为空。
+- 真实 API：GET `/api/xingheng/v3` 回读版本 3.0.0 与三个新键；新键保存返回 200，旧键保存返回 400 且配置未改变；旧 `/api/xingheng/v2` 返回 404。
+- 真实 UI：三角色、9个下拉框正常。页脚仅显示三个新工具名；特性实现推理 medium→high 保存、重新打开设置仍为 high，随后恢复 medium。
+- 真实新建 `xingheng` 会话中，每个新工具只调用一次；子代理均运行 `xingheng-worker`，分别使用原定的三路模型/推理，返回 `ROLE_OK`。三个子代理均未调用其他工具，主控最终返回 `XINGHENG_V3_ALL_ROLES_OK`。
+- 请求头中的角色委派工具集合精确为三个新名，不含任何旧角色工具名。旧的运行中 Agent 仍可能持有旧 revision；未改写历史会话。
+- 首轮主控 Gemini 网关 503 在任何委派前失败；仅验收会话的主控改用 a6/Sol 后完成流程，保存的角色路线未作替换。
+- 热加载曾因旧模块缓存导致 schema/default 和 role 枚举混用，已通过新职责模块路径解决，随后确认预设无 broken 诊断且新会话实际创建/调用成功。插件管理器仍报告 restart-required/unmanaged-plugin：当前进程功能已验收，不将它说成 applied；建议结束工作后完整重启，以清理旧内存 revision。

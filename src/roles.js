@@ -1,8 +1,8 @@
-export const ROLES = Object.freeze(['fast', 'text', 'long']);
+export const ROLES = Object.freeze(['iterate', 'implement', 'analyze']);
 export const DEFAULT_WORKERS = Object.freeze({
-  fast: { provider: 'zero', model: 'deepseek-v4.1-flash-1017', effort: 'high' },
-  text: { provider: 'zero', model: 'gpt-6.1-sol', effort: 'medium' },
-  long: { provider: 'zero', model: 'gpt-6.1-terra', effort: 'high' },
+  iterate: { provider: 'zero', model: 'deepseek-v4.1-flash-1017', effort: 'high' },
+  implement: { provider: 'zero', model: 'gpt-6.1-sol', effort: 'medium' },
+  analyze: { provider: 'zero', model: 'gpt-6.1-terra', effort: 'high' },
 });
 export const clone = value => structuredClone(value);
 export const revisionOf = workers => JSON.stringify(ROLES.map(role => workers[role]));
@@ -10,7 +10,7 @@ export const revisionOf = workers => JSON.stringify(ROLES.map(role => workers[ro
 /** Parse a complete update. Unknown keys and whitespace-only IDs fail closed. */
 export function parseWorkers(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('workers must be an object');
-  if (Object.keys(input).sort().join(',') !== [...ROLES].sort().join(',')) throw new Error('workers requires exactly fast, text and long');
+  if (Object.keys(input).sort().join(',') !== [...ROLES].sort().join(',')) throw new Error('workers requires exactly iterate, implement and analyze');
   return Object.fromEntries(ROLES.map(role => {
     const value = input[role];
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${role}: invalid route`);

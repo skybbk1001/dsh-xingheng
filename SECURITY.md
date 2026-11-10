@@ -4,7 +4,7 @@
 
 | 版本 (Version) | 支持状态 (Supported) | 适配 DSH 基线 (Target DSH Version) |
 | :--- | :--- | :--- |
-| `2.1.x` | 当前维护 (Current) | `0.2.2-rc.1`（见 [验收记录](docs/acceptance.md)） |
+| `3.x` | 当前维护 (Current) | `0.2.2-rc.1`（见 [验收记录](docs/acceptance.md#300-底层角色重命名验收--2026-11-10)） |
 | `< 2.0.0`（旧实验草稿 / `economy` 拆分包） | 不再支持 (No) | 已废弃并清理（见 [迁移说明](docs/migration.md)） |
 
 ---
@@ -15,11 +15,11 @@
    - `@local/dsh-xingheng` 作为 DSH 插件包运行在 DSH Host 进程与 Web 客户端内。安装本包即代表信任本仓库的本地代码。
    - 通过 `plugin_manager` 安装或移除插件需要会话具备 `danger-full-access` 权限或经用户明确审批；该操作会影响当前 Profile 下的所有会话。
 2. **连接鉴权与无凭据传输（Authenticated Transport）**：
-   - 配置端点 `/api/xingheng/v2` 通过 DSH 原生 `connection.fetch.register` 注册，由 DSH `Connection` 统一强制校验 Host/Origin 信任、同源签名 Cookie 与 Owner 权限。本插件不启动任何独立的未鉴权 HTTP 服务。
+   - 配置端点 `/api/xingheng/v3` 通过 DSH 原生 `connection.fetch.register` 注册，由 DSH `Connection` 统一强制校验 Host/Origin 信任、同源签名 Cookie 与 Owner 权限。本插件不启动任何独立的未鉴权 HTTP 服务。
    - 配置读取与保存请求仅包含提供商 ID、模型 ID、推理强度档位与 CAS 修订号字符串，**不传输、不读取也不存储任何模型 API 密钥或会话凭据**。
 3. **严格目录校验与禁止静默覆盖（Fail-Closed Route Validation）**：
-   - 保存配置时严格校验 `fast`、`text`、`long` 三路角色，拒绝未知字段、空 ID 或首尾空白字符，并通过 `llm` 服务核实提供商、模型与推理档位均已注册且受支持。
-   - 普通子代理委派固定设置 `modelSelection: false`，禁止主控在调用 `subagent_fast/text/long` 时通过参数覆写用户配置的模型路由。
+   - 保存配置时严格校验 `iterate`、`implement`、`analyze` 三路角色，拒绝未知字段、空 ID 或首尾空白字符，并通过 `llm` 服务核实提供商、模型与推理档位均已注册且受支持。
+   - 普通子代理委派固定设置 `modelSelection: false`，禁止主控在调用 `subagent_iterate/implement/analyze` 时通过参数覆写用户配置的模型路由。
    - `xingheng_config` 对主控可见；“仅按用户要求修改”是提示词约定，不是插件另加的权限检查。读取配置可以用于正常诊断。
 4. **子代理工具掩码与沙箱边界（Tool Mask vs. OS Sandbox）**：
    - [`src/policy.js`](src/policy.js) 对 `xingheng-worker` 子代理施加工具白名单限制（移除浏览器、网络搜索、IM 及再次委派工具），但这仅裁剪 DSH 工具调用面，**不等于阻止 `bash` / `pwsh` 命令发起操作系统级网络请求**。
@@ -41,11 +41,11 @@
    - `@local/dsh-xingheng` executes trusted code inside the DSH Host process and Web client, and persists configuration into the active DSH profile.
    - Installing or removing bundles via `plugin_manager` requires `danger-full-access` permission or explicit user approval for that call, and changes affect every session in the profile.
 2. **Authenticated Endpoint & Credential Isolation**:
-   - `/api/xingheng/v2` is registered through DSH `connection.fetch.register`, which enforces Host/Origin validation, signed-cookie authentication, and owner authorization before invoking the handler. No standalone unauthenticated HTTP server is created.
+   - `/api/xingheng/v3` is registered through DSH `connection.fetch.register`, which enforces Host/Origin validation, signed-cookie authentication, and owner authorization before invoking the handler. No standalone unauthenticated HTTP server is created.
    - Configuration payloads contain only provider IDs, model IDs, reasoning effort IDs, and CAS revision strings—never API keys or user credentials.
 3. **Fail-Closed Validation & Fixed Delegation Routes**:
    - Saves fail closed on unknown keys, whitespace-padded IDs, unadvertised models, unsupported reasoning efforts, or stale CAS revisions (`expectedRevision`).
-   - Ordinary role tools (`subagent_fast`, `subagent_text`, `subagent_long`) enforce `modelSelection: false` so the Lead cannot override user-configured routes per invocation.
+   - Ordinary role tools (`subagent_iterate`, `subagent_implement`, `subagent_analyze`) enforce `modelSelection: false` so the Lead cannot override user-configured routes per invocation.
    - The preset instructs agents to change routes only when requested by the user. This is a prompt convention, not an additional authorization check in the plugin; reads can support routine diagnostics.
 4. **Worker Capability Mask vs. Sandbox Authority**:
    - [`src/policy.js`](src/policy.js) restricts the DSH tool catalog visible to `xingheng-worker` (removing browser, search, IM, and delegation tools), which limits the tool surface but **does not block OS-level network access inside `bash` or `pwsh`**.
@@ -55,6 +55,6 @@
 
 ### Reporting a Vulnerability
 
-- Current maintenance target: `2.1.x` on the exact DSH baseline (`0.2.2-rc.1`) documented in the [Acceptance Record](docs/acceptance.md).
+- Current maintenance target: `3.x` on the exact DSH baseline (`0.2.2-rc.1`) documented in the [Acceptance Record](docs/acceptance.md#300-底层角色重命名验收--2026-11-10).
 - Contact the [private repository](https://github.com/skybbk1001/dsh-xingheng) owner privately with the affected version, minimal reproduction steps, and impact assessment. No public reporting address is configured while the repository remains private.
 - **Never post API keys, cookies, session logs, or launch tokens in issues, pull requests, or commits.**

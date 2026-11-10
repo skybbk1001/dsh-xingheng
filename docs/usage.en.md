@@ -1,6 +1,6 @@
 # Xingheng Detailed Usage & Troubleshooting Guide
 
-This guide covers the complete installation workflow, three-role ordinary subagent configuration interfaces, operational boundaries between **Native Agent Teams** and **Ordinary Role Subagents (Workers)**, control tool aliases and addressing protocols, CAS revision rules, and troubleshooting for `@local/dsh-xingheng` `2.1.0`.
+This guide covers the complete installation workflow, three-role ordinary subagent configuration interfaces, operational boundaries between **Native Agent Teams** and **Ordinary Role Subagents (Workers)**, control tool aliases and addressing protocols, CAS revision rules, and troubleshooting for `@local/dsh-xingheng` `3.0.0`.
 
 [Back to English README](../README.en.md) · [中文详细使用指南](usage.md) · [Architecture](architecture.md) · [Migration & Cleanup](migration.md) · [Acceptance Record](acceptance.md)
 
@@ -39,11 +39,23 @@ Xingheng provides three interfaces backed by the exact same validation and `Conf
 
 ### 2.1 Role Definitions & Initial Draft Combination
 
-| Role Key | English UI Label | Chinese UI Label | Delegation Tool | Typical Task Scope | Built-in Initial Draft (`DEFAULT_WORKERS`) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`fast`** | Quick iteration | 快速迭代 | `subagent_fast` | Local fixes, small improvements, and spot checks | `zero` / `deepseek-v4.1-flash-1017` / `high` |
-| **`text`** | Feature implementation | 特性实现 | `subagent_text` | Features, API implementation, and test writing | `zero` / `gpt-6.1-sol` / `medium` |
-| **`long`** | Analysis and planning | 分析规划 | `subagent_long` | Code review, architecture analysis, and complex debugging | `zero` / `gpt-6.1-terra` / `high` |
+| Role | Chinese UI label | Typical scope | Initial combination |
+| :--- | :--- | :--- | :--- |
+| **Quick iteration** | 快速迭代 | Local fixes, small improvements, spot checks | `zero` / `deepseek-v4.1-flash-1017` / `high` |
+| **Feature implementation** | 特性实现 | Features, API implementation, test writing | `zero` / `gpt-6.1-sol` / `medium` |
+| **Analysis and planning** | 分析规划 | Code review, architecture analysis, complex debugging | `zero` / `gpt-6.1-terra` / `high` |
+
+#### Role identifiers
+
+Display names, configuration keys and delegation tool IDs now describe the task responsibility. Only the identifiers below are supported; legacy role keys and tool names have no aliases or parser fallback.
+
+| Role | Configuration key | Delegation tool ID |
+| :--- | :--- | :--- |
+| Quick iteration | `iterate` | `subagent_iterate` |
+| Feature implementation | `implement` | `subagent_implement` |
+| Analysis and planning | `analyze` | `subagent_analyze` |
+
+Use the role labels in the UI and natural-language task requests. Use the exact identifiers above in JSON, tool calls and source-level references; do not replace JSON keys with display labels.
 
 > **Important Note**: `DEFAULT_WORKERS` serves only as the initial default and the template for the **"Fill initial combination"** button. **It implies no price, speed, or capability ranking.** If any default provider or model is not registered in your active DSH catalog, saving will fail closed until you select an advertised option.
 
@@ -57,7 +69,7 @@ Xingheng provides three interfaces backed by the exact same validation and `Conf
    - **Reasoning effort**: Populated from `llm.resolveModelInfo(provider, model)`, plus **"Native default (may inherit lead effort)"** (stored as `""`).
 4. Review status and save:
    - When modified, the status badge shows **Unsaved changes**.
-   - Click **Save configuration** (`POST ./api/xingheng/v2`). Once validated and persisted, the UI updates from the server read-back snapshot and displays: *"Saved and read back. The next child will use these routes."*
+   - Click **Save configuration** (`POST ./api/xingheng/v3`). Once validated and persisted, the UI updates from the server read-back snapshot and displays: *"Saved and read back. The next child will use these routes."*
    - To discard unsaved edits, click **Reload** and confirm the prompt.
 
 ### 2.3 Method 2: `xingheng_config` Agent Tool
@@ -70,7 +82,7 @@ When explicitly requested by the user, the assistant can read or save role route
     "action": "read"
   }
   ```
-  Returns `version` (`"2.1.0"`), `workers`, `revision` (the CAS revision string), `providers` (with advertised `models`, `efforts`, and `defaultEffort`), `preset`, and `applies` (`"next-child"`).
+  Returns `version` (`"3.0.0"`), `workers`, `revision` (the CAS revision string), `providers` (with advertised `models`, `efforts`, and `defaultEffort`), `preset`, and `applies` (`"next-child"`).
 
 - **Save a complete configuration (requires `expectedRevision` and all three roles)**:
   ```json
@@ -78,9 +90,9 @@ When explicitly requested by the user, the assistant can read or save role route
     "action": "save",
     "expectedRevision": "[{\"provider\":\"zero\",\"model\":\"deepseek-v4.1-flash-1017\",\"effort\":\"high\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-sol\",\"effort\":\"medium\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-terra\",\"effort\":\"high\"}]",
     "workers": {
-      "fast": { "provider": "zero", "model": "deepseek-v4.1-flash-1017", "effort": "medium" },
-      "text": { "provider": "zero", "model": "gpt-6.1-sol", "effort": "medium" },
-      "long": { "provider": "zero", "model": "gpt-6.1-terra", "effort": "high" }
+      "iterate": { "provider": "zero", "model": "deepseek-v4.1-flash-1017", "effort": "medium" },
+      "implement": { "provider": "zero", "model": "gpt-6.1-sol", "effort": "medium" },
+      "analyze": { "provider": "zero", "model": "gpt-6.1-terra", "effort": "high" }
     }
   }
   ```
@@ -98,7 +110,7 @@ Use ordinary role subagents when delegating a bounded fix, self-contained featur
 
 ### 3.1 Spawning & Route Isolation
 
-- The Lead calls `subagent_fast`, `subagent_text`, or `subagent_long` with:
+- The Lead calls `subagent_iterate`, `subagent_implement`, or `subagent_analyze` with:
   - `description`: Short (3–5 words) task label for UI display.
   - `prompt`: **Complete, self-contained instructions**. Because workers run in a fresh context (`spawn`), they do not share the Lead's conversation history. The prompt must explicitly state:
     1. **Write Scope**: Exact file paths the worker is allowed to modify (all other paths must remain read-only).
@@ -134,7 +146,7 @@ Use **Native Agent Teams** when work spans multiple interdependent tasks, requir
   - `description`: Short summary of delegated responsibility.
   - `prompt`: Complete initial task instructions.
   - `context`: `"fresh"` (default; clean context without Lead history) or `"fork"` (inherits completed Lead turns; use only when prior Lead history is genuinely needed).
-- **Teammates Inherit the Lead Model**: Native teammates **inherit the Lead's effective model and preset at creation**. The current native DSH `spawn_teammate` API has no parameter for an independent teammate model; the three role routes in **Settings → Xingheng · Subagent configuration** apply only to ordinary subagents (`subagent_fast/text/long`).
+- **Teammates Inherit the Lead Model**: Native teammates **inherit the Lead's effective model and preset at creation**. The current native DSH `spawn_teammate` API has no parameter for an independent teammate model; the three role routes in **Settings → Xingheng · Subagent configuration** apply only to ordinary subagents (`subagent_iterate/implement/analyze`).
 
 ### 4.2 Team Controls & Compatibility Aliases (Addressed by `target` Member Name)
 
@@ -182,7 +194,7 @@ Team members coordinate shared work through four native tools backed by the sess
 - **Symptom: Settings section is missing after install, or UI warns *"The Xingheng preset is unavailable"***
   - **Cause**: `plugin_manager` returned `application: "restart-required"`, or the browser tab has not been refreshed.
   - **Fix**: Restart the original DSH Host process (if required), then refresh your browser tab. Do not start a second server on a different port.
-- **Symptom: After upgrading to `2.1.0`, `spawn_teammate`, `team_roster`, or `subagent_message` is missing in an existing conversation**
+- **Symptom: After upgrading to `3.0.0`, `spawn_teammate`, `team_roster`, or `subagent_message` is missing in an existing conversation**
   - **Cause**: Live Agents retain their mounted in-memory revision. Logs retain the preset ID, and recovery after restart resolves its current definition rather than restoring an old implementation.
   - **Fix**: Start a **new session** with the **星衡 · 协作 (`xingheng`)** preset.
 
@@ -194,7 +206,7 @@ Team members coordinate shared work through four native tools backed by the sess
 - **Symptom: Saving returns `HTTP 409` (`Configuration conflict`)**
   - **Cause**: The double CAS check detected that `expectedRevision` no longer matches the latest saved configuration (another tab, tool call, or command saved first).
   - **Fix**: Click **Reload** in the UI (or call `action: "read"` first), reapply your desired changes to the fresh snapshot, and save.
-- **Symptom: `POST /api/xingheng/v2` returns `HTTP 400`, `413`, or `415`**
+- **Symptom: `POST /api/xingheng/v3` returns `HTTP 400`, `413`, or `415`**
   - **Cause**:
     - `400`: Malformed `workers` map, missing/extra role keys, leading/trailing whitespace in IDs, or an unregistered provider/model/effort.
     - `413`: Parsed JSON reserialized with `JSON.stringify` exceeds 12000 JavaScript character units; this is not a strict UTF-8 byte limit.
@@ -203,9 +215,9 @@ Team members coordinate shared work through four native tools backed by the sess
 
 ### 5.3 Delegation & Team Collaboration Issues
 
-- **Symptom: Passing `provider` or `model` to `subagent_fast/text/long` fails with `selection is disabled`**
+- **Symptom: Passing `provider` or `model` to `subagent_iterate/implement/analyze` fails with `selection is disabled`**
   - **Cause**: Xingheng sets `modelSelection: false` so the Lead cannot override user-configured role routes per call.
-  - **Fix**: Omit model arguments when calling `subagent_fast/text/long`. Change routes only via Settings or `xingheng_config` when requested by the user.
+  - **Fix**: Omit model arguments when calling `subagent_iterate/implement/analyze`. Change routes only via Settings or `xingheng_config` when requested by the user.
 - **Symptom: A child agent hits an authentication (401/403), quota, or sandbox permission failure, and the Lead tries to switch roles/models**
   - **Cause**: Authentication, quota, and sandbox denials are infrastructure or policy blockers, not model capability failures.
   - **Fix**: Report the exact blocker to the user; do **not** escalate or retry across other subagent roles to bypass infrastructure or permission errors.
