@@ -1,0 +1,20 @@
+name: Bug report
+description: Report a reproducible defect without secrets
+body:
+  - type: input
+    id: version
+    attributes:
+      label: DSH, Xingheng and Node versions
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps and expected/actual results
+      description: Do not include tokens, cookies, API keys or full session logs.
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Relevant redacted error and checks performed

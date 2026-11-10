@@ -1,0 +1,68 @@
+{
+  "name": "@local/dsh-xingheng",
+  "version": "2.1.0",
+  "description": "Xingheng: persistent, role-based subagent model configuration for DeepSeek Harness.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skybbk1001/dsh-xingheng.git"
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.2-rc.1 <0.3"
+  },
+  "exports": {
+    ".": "./src/host.js",
+    "./delegation": "./src/delegation.js",
+    "./policy": "./src/policy.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./controls": "./src/controls.js",
+    "./team-controls": "./src/team-controls.js"
+  },
+  "files": [
+    "src/",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/",
+    "icon.svg",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "docs/"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node scripts/check.mjs",
+    "verify": "npm run check && npm test",
+    "pack:check": "npm pack --dry-run --json"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-tool-subagent": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tool-subagent-control": "0.2.2-rc.1",
+    "@deepseek-ai/schemastery": "3.19.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.2.2-rc.1",
+    "js-yaml": "^4.1.1"
+  }
+}

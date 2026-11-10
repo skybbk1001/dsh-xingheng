@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Xingheng subagent configuration",
+    "description": "Configure persistent provider, model and reasoning effort per subagent role. Saved routes apply to the next delegation."
+  }
+}
