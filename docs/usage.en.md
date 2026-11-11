@@ -1,234 +1,243 @@
-# Xingheng Detailed Usage & Troubleshooting Guide
+# Xingheng: usage and troubleshooting
 
-This guide covers the complete installation workflow, three-role ordinary subagent configuration interfaces, operational boundaries between **Native Agent Teams** and **Ordinary Role Subagents (Workers)**, control tool aliases and addressing protocols, CAS revision rules, and troubleshooting for `@local/dsh-xingheng` `3.1.0`.
+For `@local/dsh-xingheng` `3.1.0`: installation and activation, the three-role ordinary subagent configuration, how native Agent Teams and ordinary subagents divide work, tool aliases and addressing, permissions and revisions, and fixes for the usual failures.
 
-[Back to English README](../README.en.md) · [中文详细使用指南](usage.md) · [Architecture](architecture.md) · [Migration & Cleanup](migration.md) · [Acceptance Record](acceptance.md)
+[Back to English README](../README.en.md) · [中文详细使用指南](usage.md) · [Architecture](architecture.md) · [Migration](migration.md) · [Acceptance](acceptance.md)
 
 ---
 
-## 1. Installation & Activation Workflow
+## 1. Installation and activation
 
 ### 1.1 Prerequisites
 
 - **Node.js**: `>=22`
-- **Profile prerequisites**: enable the shipped `dsh-base`, `dsh-web-app` and `dsh-experimental-agent-team-profile` bundles. Xingheng consumes their services rather than creating a second Team implementation.
-- **DeepSeek Harness (DSH)**: `>=0.2.2-rc.1 <0.3` (directly reuses the native `@deepseek-ai/dsh-tool-subagent` and `@deepseek-ai/dsh-tool-subagent-control` executors pinned at `0.2.2-rc.1`)
-- **Session Permission**: Invoking `plugin_manager` requires `danger-full-access` permission in the current session, or explicit user approval for the tool call.
+- **Profile prerequisites**: the shipped `dsh-base`, `dsh-web-app` and `dsh-experimental-agent-team-profile` bundles must be enabled. Xingheng consumes their services and will not build a second Team implementation when they are missing.
+- **DeepSeek Harness (DSH)**: `>=0.2.2-rc.1 <0.3`. This build reuses the `@deepseek-ai/dsh-tool-subagent` and `@deepseek-ai/dsh-tool-subagent-control` executors from `0.2.2-rc.1`.
+- **Session permission**: calling `plugin_manager` needs `danger-full-access` in the session, or explicit approval for that one call.
 
-### 1.2 Install via the `plugin_manager` Assistant Tool
+### 1.2 Installing with `plugin_manager`
 
-In an active DSH conversation, ask the assistant:
+Ask the assistant in a DSH session:
 
-> Please call the `plugin_manager` tool (`action: "install_bundle"`, `target: "/absolute/path/dsh-xingheng"`) to install the Xingheng bundle.
+> Please call the `plugin_manager` tool (`action: "install_bundle"`, target `/absolute/path/dsh-xingheng`) to install Xingheng.
 
-**Important Distinctions**:
+`plugin_manager` is an assistant tool, not a shell command. The assistant issues `plugin_manager({ action: "install_bundle", target: "/absolute/path/dsh-xingheng" })` in a turn; typing `plugin_manager ...` in a terminal or the `bash` tool finds no such binary, and hand-editing the Profile YAML/JSON is not an install either.
 
-1. **`plugin_manager` is an assistant tool call, NOT a shell command**:
-   - **Correct**: The assistant calls `plugin_manager({ action: "install_bundle", target: "/absolute/path/dsh-xingheng" })`.
-   - **Incorrect**: Running `plugin_manager ...` inside a `bash` shell (no such shell binary exists) or hand-editing DSH profile manifest files.
-2. **Inspect `application` and `warnings` in the response**:
-   - `application: "applied"`: The Host service, client slot, and presets are live in the current process. Refresh your browser tab to load the UI.
-   - `application: "restart-required"` (or an `unmanaged-plugin` notice): Already-loaded modules require a process restart to re-initialize cleanly. You must **restart the original DSH Host process** first, then refresh your browser tab.
-   - **Do not confuse browser reload with Host restart**: Reloading the browser tab only reloads client assets; it does not restart the DSH Node.js process. Starting a second server on another port will not update your active Web GUI.
+Read `application` and `warnings` from the result:
+
+- `application: "applied"`: the Host service and presets are hot-loaded into the running process. Refresh the browser tab.
+- `application: "restart-required"` (sometimes with an `unmanaged-plugin` notice): the loaded modules need to initialize in a new process. Restart the DSH Host process, then refresh the tab.
+
+Refreshing the page (F5) reloads client assets only, never the backend. Starting a second DSH server on another port will not update the GUI your browser is connected to.
 
 ---
 
-## 2. Configuring the Three Ordinary Subagent Roles
+## 2. Configuring the three ordinary subagents
 
-Xingheng provides three interfaces backed by the exact same validation and `ConfigEditor` persistence pipeline: the **Web Settings UI**, the **`xingheng_config` agent tool**, and the **`/xingheng` slash command**.
+All three entry points share the same validation and atomic `ConfigEditor` persistence: the Web settings page, the `xingheng_config` assistant tool, and the `/xingheng` slash command.
 
-### 2.1 Role Definitions & Initial Draft Combination
+### 2.1 Roles and the starting combination
 
-| Role | Chinese UI label | Typical scope | Initial combination |
+| Role | Chinese label | Typical work | Starting combination |
 | :--- | :--- | :--- | :--- |
-| **Quick iteration** | 快速迭代 | Local fixes, small improvements, spot checks | `zero` / `deepseek-v4.1-flash-1017` / `high` |
-| **Feature implementation** | 特性实现 | Features, API implementation, test writing | `zero` / `gpt-6.1-sol` / `medium` |
-| **Analysis and planning** | 分析规划 | Code review, architecture analysis, complex debugging | `zero` / `gpt-6.1-terra` / `high` |
+| Quick iteration | 快速迭代 | Local fixes, small improvements, spot checks | `zero` / `deepseek-v4.1-flash-1017` / `high` |
+| Feature implementation | 特性实现 | Features, API work, test suites | `zero` / `gpt-6.1-sol` / `medium` |
+| Analysis and planning | 分析规划 | Code review, architecture, hard diagnosis | `zero` / `gpt-6.1-terra` / `high` |
 
-#### Role identifiers
+Display names, configuration keys and delegation tool IDs all follow the task responsibility. Only the three identifiers below are supported; there is no legacy role key and no fallback parser for old tool names.
 
-Display names, configuration keys and delegation tool IDs now describe the task responsibility. Only the identifiers below are supported; legacy role keys and tool names have no aliases or parser fallback.
-
-| Role | Configuration key | Delegation tool ID | Bound preset & tool boundary |
+| Role | Configuration key | Delegation tool | Bound preset |
 | :--- | :--- | :--- | :--- |
-| Quick iteration | `iterate` | `subagent_iterate` | `xingheng-worker` (scoped read/write + shell) |
-| Feature implementation | `implement` | `subagent_implement` | `xingheng-worker` (scoped read/write + shell) |
-| Analysis and planning | `analyze` | `subagent_analyze` | `xingheng-analyst` (schema-level read-only) |
+| Quick iteration | `iterate` | `subagent_iterate` | `xingheng-worker`, scoped read/write + shell |
+| Feature implementation | `implement` | `subagent_implement` | `xingheng-worker`, scoped read/write + shell |
+| Analysis and planning | `analyze` | `subagent_analyze` | `xingheng-analyst`, read-only |
 
-Use the role labels in the UI and natural-language task requests. Use the exact identifiers above in JSON, tool calls and source-level references; do not replace JSON keys with display labels.
+Use the role labels in the UI and in natural-language requests. In JSON, tool calls and source references, use the identifiers above; do not put the Chinese label in a JSON key.
 
-> **Important Note**: `DEFAULT_WORKERS` serves only as the initial default and the template for the **"Fill initial combination"** button. **It implies no price, speed, or capability ranking.** If any default provider or model is not registered in your active DSH catalog, saving will fail closed until you select an advertised option.
+`DEFAULT_WORKERS` is a starting value and the template behind the "Fill initial combination" button. It is not a ranking of model quality, speed or price. If the active catalog lacks one of those providers or models, saving fails closed and you pick something that is actually there.
 
-### 2.2 Method 1: Web Settings UI
+### 2.2 Method 1: the Web settings page
 
 1. Open **Settings** in the DSH Web GUI.
-2. Select **Xingheng · Subagent configuration** (**星衡 · 子代理配置** in Chinese).
-3. For **01 Quick iteration**, **02 Feature implementation**, and **03 Analysis and planning**, select:
-   - **Provider**: Populated from `llm.listProviders()`. Changing the provider clears the role's model and reasoning effort draft to prevent stale cross-provider IDs.
-   - **Model**: Populated from `llm.listModels(provider)`. Changing the model resets the role's reasoning effort draft.
-   - **Reasoning effort**: Populated from `llm.resolveModelInfo(provider, model)`, plus **"Native default (may inherit lead effort)"** (stored as `""`).
-4. Review status and save:
-   - When modified, the status badge shows **Unsaved changes**.
-   - Click **Save configuration** (`POST ./api/xingheng/v3`). Once validated and persisted, the UI updates from the server read-back snapshot and displays: *"Saved and read back. The next child will use these routes."*
-   - To discard unsaved edits, click **Reload** and confirm the prompt.
+2. Choose **Xingheng · Subagent configuration** (**星衡 · 子代理配置** in Chinese).
+3. For **01 Quick iteration**, **02 Feature implementation** and **03 Analysis and planning**, pick:
+   - **Provider**: from `llm.listProviders()`. Changing it clears that role's model and effort draft so no stale cross-provider ID survives.
+   - **Model**: from `llm.listModels(provider)`. Changing it resets the role's effort draft.
+   - **Reasoning effort**: from what `llm.resolveModelInfo(provider, model)` advertises, or "Native default (may inherit lead effort)", stored as `""`.
+4. Watch the status bar:
+   - After editing it reads **Unsaved changes**.
+   - **Save configuration** posts to `./api/xingheng/v3`. On success the UI updates from the server read-back and shows: *"Saved and read back. The next child will use these routes."*
+   - To drop the draft, click **Reload** and confirm.
 
-### 2.3 Method 2: `xingheng_config` Agent Tool
+### 2.3 Method 2: the `xingheng_config` tool
 
-When explicitly requested by the user, the assistant can read or save role routes using `xingheng_config` (**the Lead must never change routes autonomously without a user request**):
+The assistant calls `xingheng_config` only when the user explicitly asks to read or change the role routes. Without that request the Lead must not change routes on its own.
 
-- **Read active routes and catalog snapshot**:
-  ```json
-  {
-    "action": "read"
+**Read the active routes and catalog**:
+
+```json
+{
+  "action": "read"
+}
+```
+
+The response contains `version` (`"3.1.0"`), `workers` (the three active routes), `revision` (the CAS revision string), `providers` (with `models`, `efforts` and `defaultEffort` each), `preset` (a summary of `xingheng`) and `applies` (`"next-child"`).
+
+**Save a complete configuration**: it needs the latest `expectedRevision` and all three `workers`:
+
+```json
+{
+  "action": "save",
+  "expectedRevision": "[{\"provider\":\"zero\",\"model\":\"deepseek-v4.1-flash-1017\",\"effort\":\"high\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-sol\",\"effort\":\"medium\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-terra\",\"effort\":\"high\"}]",
+  "workers": {
+    "iterate": { "provider": "zero", "model": "deepseek-v4.1-flash-1017", "effort": "medium" },
+    "implement": { "provider": "zero", "model": "gpt-6.1-sol", "effort": "medium" },
+    "analyze": { "provider": "zero", "model": "gpt-6.1-terra", "effort": "high" }
   }
-  ```
-  Returns `version` (`"3.1.0"`), `workers`, `revision` (the CAS revision string), `providers` (with advertised `models`, `efforts`, and `defaultEffort`), `preset`, and `applies` (`"next-child"`).
+}
+```
 
-- **Save a complete configuration (requires `expectedRevision` and all three roles)**:
-  ```json
-  {
-    "action": "save",
-    "expectedRevision": "[{\"provider\":\"zero\",\"model\":\"deepseek-v4.1-flash-1017\",\"effort\":\"high\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-sol\",\"effort\":\"medium\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-terra\",\"effort\":\"high\"}]",
-    "workers": {
-      "iterate": { "provider": "zero", "model": "deepseek-v4.1-flash-1017", "effort": "medium" },
-      "implement": { "provider": "zero", "model": "gpt-6.1-sol", "effort": "medium" },
-      "analyze": { "provider": "zero", "model": "gpt-6.1-terra", "effort": "high" }
-    }
-  }
-  ```
+### 2.4 Method 3: the `/xingheng` slash command
 
-### 2.4 Method 3: `/xingheng` Slash Command
-
-- **Read**: Run `/xingheng` with no arguments to print the current snapshot JSON.
-- **Save**: Run `/xingheng {"action":"save","expectedRevision":"...","workers":{...}}` to perform a revision-checked save.
+- **Read**: `/xingheng` with no argument prints the current snapshot JSON.
+- **Write**: `/xingheng {"action":"save","expectedRevision":"...","workers":{...}}` runs the same revision-checked save.
 
 ---
 
-## 3. Ordinary Role Subagents (Workers) Workflow
+## 3. Ordinary role subagents
 
-Use ordinary role subagents when delegating a bounded fix, self-contained feature slice, or read-only analysis that **does not require peer-to-peer messaging or a shared task board**:
+Use an ordinary role subagent for a bounded fix, a self-contained feature, or a single review that needs no peer messaging and no shared task board.
 
-### 3.1 Spawning & Route Isolation
+### 3.1 Spawning and route isolation
 
-- The Lead calls `subagent_iterate`, `subagent_implement`, or `subagent_analyze` with:
-  - `description`: Short (3–5 words) task label for UI display.
-  - `prompt`: **Complete, self-contained instructions**. Because workers run in a fresh context (`spawn`), they do not share the Lead's conversation history. The prompt must explicitly state:
-    1. **Write Scope**: Exact file paths the worker is allowed to modify (all other paths must remain read-only).
-    2. **Acceptance Criteria**: Concrete conditions for completion.
-    3. **Validation Permission**: `xingheng-worker` defaults to `Validation = NONE` (no compilation, test execution, dependency downloads, or ad-hoc runners unless the Lead explicitly authorizes the exact command or a bounded equivalent).
-  - `cwd` (optional): Initial child working directory.
-- **No Per-Call Model Overrides**: `modelSelection: false` is enforced on all three tools. Passing `provider` or `model` in tool arguments is rejected (`selection is disabled`).
+The Lead calls `subagent_iterate`, `subagent_implement` or `subagent_analyze` with:
 
-### 3.2 Controlling Ordinary Subagents (Addressed by `agent_id`)
+- `description`: a 3–5 word label for the UI.
+- `prompt`: complete, self-contained instructions. Ordinary subagents spawn with a fresh context and cannot see the Lead's history, so the prompt must state all three:
+  1. **Write scope**: the exact paths it may modify; everything else stays read-only.
+  2. **Acceptance criteria**: what counts as done.
+  3. **Validation permission**: `xingheng-worker` defaults to `Validation = NONE` — no compiling, no test runs, no dependency downloads, no ad-hoc runner. To have it run a specific command, the Lead must authorize that exact command in the prompt.
+- `cwd` (optional): the child's initial working directory.
 
-On the `xingheng` Lead preset, ordinary subagent controls are namespaced under `subagent_*` and message and interrupt controls **address children by session ID (`agent_id`)**; the list control takes only `scope`:
+All three tools pin `modelSelection: false` and reject `provider` or `model` arguments; the model comes from saved configuration. Iteration and implementation route to `xingheng-worker`, analysis to `xingheng-analyst`.
 
-- **`subagent_list`**: Lists ordinary subagents started by the caller (`scope: "children"` or `"descendants"`), returning `id`, `label`, and `status` (`running` or `inactive`).
-- **`subagent_message`**: Sends a follow-up message to a direct continuable child (`{ agent_id: "<child-session-id>", message: "..." }`).
-- **`subagent_interrupt`**: Requests a running child or descendant to stop its current work (`{ agent_id: "<child-session-id>" }`).
+### 3.2 Controlling ordinary subagents
 
-### 3.3 Responsibilities and handoff
+On the `xingheng` Lead preset the ordinary subagent controls are namespaced under `subagent_*`. Message and interrupt take a child session ID (`agent_id`); the list tool takes only `scope` and no target.
 
-Analysis uses a dedicated reading/search/messaging preset, with no write/edit/shell/jobs/browser/web/IM/configuration/delegation capabilities. It cannot run tests. Feature implementation owns cohesive module slices and test writing; Quick iteration owns targeted patches or explicitly authorized bounded verification. Those two execution roles share the same tool permissions, not separate OS sandboxes.
+- `subagent_list`: lists the ordinary subagents the caller started (`scope` of `"children"` or `"descendants"`) with `id`, `label` and `status` (`running` or `inactive`).
+- `subagent_message`: sends a follow-up to a direct child, or continues its finished conversation: `{ agent_id: "<child-session-id>", message: "..." }`.
+- `subagent_interrupt`: asks that child to stop its current turn: `{ agent_id: "<child-session-id>" }`.
 
-For complex work, explore/plan first, stabilize shared interfaces sequentially, implement independent cohesive slices, then request fresh-context review of a fixed diff/revision before Lead validation. Give reviewers requirements, diff, constraints and known risks rather than the author's entire transcript. Read-only parallelism does not supply snapshot isolation; freeze writes or detect drift.
+### 3.3 Division of work and handoff
 
-READY, checkpoints and freeze are prompt conventions, not hard timers or an automatic verification gate. Handoffs must distinguish evidence, changes, checks run/not run, risks and follow-up work.
+- **Analysis**: code reading, search and parent/child messaging only. No write/edit/shell/jobs, browser, web search, IM, configuration or delegation tools. It cannot run tests by design; do not route around that with other tools.
+- **Feature implementation**: cohesive module slices with their tests, not a mechanical split by file count. No unauthorized validation.
+- **Quick iteration**: a minimal patch for a known defect, or a bounded check the Lead explicitly authorized. Do not infer real speed from the role name.
+- Iteration and implementation share one read/write worker, so they do not have different OS permissions. What separates them is the task contract and the prompt, not two sandboxes.
+- Complex work goes explore → stabilize shared interfaces → implement independent modules → fresh-context review of a frozen revision → Lead validation. Give the reviewer requirements, diff, target revision, constraints and known risks; the full implementation history is noise.
+- Parallel analysis reads the same working tree with no automatic snapshot isolation. Freeze writes, or check for drift yourself.
+- READY, checkpoints and the freeze are model-side conventions, not hard timeouts or an automatic verification gate. A handoff states the evidence, the changed scope, the checks run and not run, and the risks; the Lead confirms it before calling it done.
 
 ---
 
-## 4. Native Agent Teams Workflow
+## 4. Native Agent Teams
 
-Use **Native Agent Teams** when work spans multiple interdependent tasks, requires a shared task board with blocker tracking, or benefits from durable named teammates communicating directly with each other.
+Use native Agent Teams when work spans several interdependent modules, needs a shared board to coordinate progress, or needs teammates talking to each other directly.
 
-### 4.1 Spawning Named Teammates & Model Inheritance
+### 4.1 Creating teammates and model inheritance
 
-- **Only the Team Lead (`lead`) may call `spawn_teammate`**:
-  - `name`: Unique `lower-kebab-case` teammate identifier (e.g., `"api-worker"`, `"reviewer"`).
-  - `description`: Short summary of delegated responsibility.
-  - `prompt`: Complete initial task instructions.
-  - `context`: `"fresh"` (default; clean context without Lead history) or `"fork"` (inherits completed Lead turns; use only when prior Lead history is genuinely needed).
-- **Teammates Inherit the Lead Model**: Native teammates **inherit the Lead's effective model and preset at creation**. The current native DSH `spawn_teammate` API has no parameter for an independent teammate model; the three role routes in **Settings → Xingheng · Subagent configuration** apply only to ordinary subagents (`subagent_iterate/implement/analyze`).
+Only the Team Lead (`lead`) calls `spawn_teammate`:
 
-### 4.2 Team Controls & Compatibility Aliases (Addressed by `target` Member Name)
+- `name`: a unique `lower-kebab-case` teammate name such as `"api-impl"` or `"reviewer"`.
+- `description`: a short statement of responsibility.
+- `prompt`: the initial task.
+- `context`: `"fresh"` (default; clean context with no Lead history) or `"fork"` (inherits the Lead's completed turns; only when that history is genuinely needed).
 
-Acceptance observed model claims that native communication names were unavailable, although request logs contained them; the specific cause is unconfirmed. As an explicit Team entry point, Xingheng registers **member-scoped `team_*` aliases** alongside the native names for every Team member (Lead and Teammates). Both sets invoke the exact same native executors and authority checks; **prefer the `team_*` aliases**:
+A teammate inherits the Lead's effective model and current preset at creation. The native `spawn_teammate` has no per-teammate model parameter, so the three routes under **Settings → Xingheng · Subagent configuration** do not reach teammates.
 
-| Recommended Team Alias | Equivalent Native Tool | Addressing Parameter | Authority & Behavior |
+### 4.2 Team messaging and the compatibility aliases
+
+Acceptance ran into a model claiming the native messaging tools were unavailable; the exact cause was never confirmed. To give the team an unambiguous entry point, Xingheng also registers a set of `team_*` aliases in every team member's scope (Lead and teammates alike). Both sets run the same executors, take the same parameters and carry the same authority; prefer `team_*`:
+
+| Alias | Native equivalent | Addressing | Behavior |
 | :--- | :--- | :--- | :--- |
-| **`team_roster`** | `list_agents` | `{}` (no args) | Lists the Lead and all durable teammates with their addressable `target` name, role, and availability (`running`, `inactive`, `provisioning`, `failed`) |
-| **`team_message`** | `send_message` | **`target`** (member name, e.g., `"lead"` or `"reviewer"`), `message` | Sends a message to another Team member. Running targets receive it at the nearest step boundary; **`inactive` targets start or resume a turn** |
-| **`team_interrupt`** | `interrupt_agent` | **`target`** (teammate name) | **Team Lead only**. Interrupts one teammate's current turn while preserving its pending inbox |
-| `wait_agent` | `wait_agent` | `timeout_ms` (`10000`–`3600000`, default `30000`) | Waits for the next teammate status, message, or shared-task change after the call starts. **Never wakes `inactive` members** and returns `noProgress` immediately when no other member is `running` or `provisioning` |
+| `team_roster` | `list_agents` | `{}` | Lists the Lead and every named teammate with `target` name, role and availability (`running`, `inactive`, `provisioning`, `failed`) |
+| `team_message` | `send_message` | `target` (member name, e.g. `"lead"` or `"reviewer"`) and `message` | Messages a teammate or `"lead"`. A running target receives it at the nearest step boundary; an `inactive` target starts or resumes a turn |
+| `team_interrupt` | `interrupt_agent` | `target` (teammate name) | Team Lead only. Stops that teammate's current turn and keeps its pending inbox |
+| `wait_agent` | `wait_agent` | `timeout_ms` (`10000`–`3600000`, default `30000`) | Waits for the next teammate status change, message or shared-task change after the call starts. Never wakes an `inactive` member, and returns `noProgress` right away when nothing is `running` or `provisioning` |
 
-> **Critical Rules**:
-> - Team tools take **`target`** (a member name such as `"reviewer"`), whereas ordinary subagent tools (`subagent_message` / `subagent_interrupt`) take **`agent_id`** (a child session ID). Never mix them!
-> - **`inactive` is NOT proof of task completion**: `inactive` simply means no turn is currently executing for that member.
-> - **Always check `team_roster` before `wait_agent`**: Before calling `wait_agent`, verify via `team_roster` that at least one required peer is `running` or `provisioning`. If a required teammate is `inactive`, wake it with `team_message` first.
+Things that are easy to get wrong:
 
-### 4.3 Shared Task Board & CAS Revision Workflow
+- Team tools take `target` (a member name); ordinary subagent tools (`subagent_message` / `subagent_interrupt`) take `agent_id` (a child session ID). Do not mix them.
+- `inactive` means no turn is executing. It is not a completion signal.
+- Before `wait_agent`, check with `team_roster` that at least one required teammate is `running` or `provisioning`. If it is `inactive`, wake it with `team_message` first, or `wait_agent` returns `noProgress` immediately.
 
-Team members coordinate shared work through four native tools backed by the session log (do not create ad-hoc tracking files to replace the native board):
+### 4.3 The shared board and revisions
 
-1. **`team_task_create`**: Creates an unowned pending task with `subject`, `description` (acceptance criteria), `blocked_by` (prerequisite task IDs), and `write_scopes` (advisory workspace-relative file/directory prefixes).
-2. **`team_task_list`**: Lists tasks with readiness (`ready`), owner, `revision`, blockers, and write-scope overlap warnings.
-3. **`team_task_get`**: Reads the complete latest state and `revision` of a single `task_id` before changing or executing it.
-4. **`team_task_update`**: Applies a Compare-And-Swap (CAS) transition using `expected_revision` (`claim`, `release`, `edit`, `set_dependencies`, `complete`, `reopen`, `reassign`, `delete`):
-   - **Standard Sequence**: `team_task_list` → `team_task_get` (read current `revision`) → `team_task_update({ task_id, expected_revision, action: "claim" })` → perform edits within disjoint `write_scopes` → `team_task_update({ task_id, expected_revision: <latest_revision>, action: "complete" })`.
-   - **Resolving Stale Revisions**: If `team_task_update` fails due to a concurrent update, re-read the task via `team_task_get` to obtain the latest `revision` and retry.
-   - **Advisory Write Scopes & Filesystem Guards**: All Team members share the same working tree. `write_scopes` are advisory warnings, not locks. Split write work into disjoint scopes; if an edit returns `FS_STALE_VERSION`, re-read the file, rebase your change onto the new content, and retry. Have the Lead freeze writes, review the final diff, and run validation on the settled revision.
-   - **Task Readiness Never Starts an Owner**: Assigning a task or completing its blockers (`ready: true`) does **not** wake an `inactive` teammate. Send a `team_message` to start its turn.
+Team members manage shared work through four native tools; state lives in the native session log. Do not create Markdown or JSON files to stand in for the board.
 
-### 4.4 Capacity Limits: Active Concurrency (2) vs. Team Roster (8)
+1. `team_task_create` creates a pending task with `subject`, `description` (write the acceptance criteria here), `blocked_by` (prerequisite task IDs) and `write_scopes` (advisory relative path prefixes).
+2. `team_task_list` filters by `status` (`pending`, `in_progress`, `completed`), `ready` (all blockers done) or `owner`, returning each task's `revision` and any write-scope overlap warning.
+3. `team_task_get` reads a task's latest details and `revision` before you change or execute it.
+4. `team_task_update` applies an atomic CAS transition with the latest `expected_revision`; `action` is one of `claim`, `release`, `edit`, `set_dependencies`, `complete`, `reopen`, `reassign`, `delete`.
 
-- **Active Concurrency Limit `2` (`maxActiveSubagents: 2`)**: Capacity is **2** live or materializing children per activation tree (root excluded). Waiting, pending inbox work and stopping cleanup can still occupy slots, with delegation depth capped at **1** (no nested teams or grandchildren).
-- **Lifetime Team Roster Limit `8`**: A team session allows at most **8** named teammate entries across its lifetime, including `inactive` and `failed` entries, and names cannot be reused. Reuse existing named teammates via `team_message` rather than spawning disposable teammates for every small step.
+The usual order is `team_task_list` → `team_task_get` for the current `revision` → `claim` → edit within the agreed `write_scopes` → `complete` with the new `revision`. If a concurrent edit causes a revision conflict, re-read with `team_task_get` and retry.
+
+`write_scopes` are coordination hints, not file locks. Everyone shares one working tree and every edit is immediately visible. Split writes into non-overlapping prefixes; when an edit returns `FS_STALE_VERSION`, re-read the file, replay your change onto the new content and retry. The Lead then freezes writes, reviews the diff and runs final validation.
+
+A ready task does not start its owner. Whether a Lead used `reassign` or a blocker just completed and flipped a task to `ready: true`, an `inactive` teammate will not move. The Lead, or whoever completed the blocker, must send a `team_message`.
+
+### 4.4 Two separate capacity limits
+
+- **Active concurrency 2** (`maxActiveSubagents: 2`): 2 live or materializing children per activation tree, root excluded. Waiting work, pending inbox items and stopping cleanup can also hold a slot. Maximum depth is 1, so neither a teammate nor a worker can nest further.
+- **Lifetime roster 8**: at most 8 named teammates created via `spawn_teammate` per session. `inactive` and `failed` entries still occupy slots, and a name cannot be reused in the same session. Reuse existing teammates with `team_message` instead of spawning one per small step.
 
 ---
 
-## 5. Detailed Troubleshooting
+## 5. Troubleshooting
 
-### 5.1 Installation & Activation Issues
+### 5.1 Installation and activation
 
-- **Symptom: Running `plugin_manager` in a terminal returns `command not found`**
-  - **Cause**: `plugin_manager` is an assistant tool inside DSH, not a shell executable.
-  - **Fix**: Ask the assistant in a DSH chat session to call the `plugin_manager` tool.
-- **Symptom: Settings section is missing after install, or UI warns *"The Xingheng preset is unavailable"***
-  - **Cause**: `plugin_manager` returned `application: "restart-required"`, or the browser tab has not been refreshed.
-  - **Fix**: Restart the original DSH Host process (if required), then refresh your browser tab. Do not start a second server on a different port.
-- **Symptom: After upgrading to `3.1.0`, `spawn_teammate`, `team_roster`, or `subagent_message` is missing in an existing conversation**
-  - **Cause**: Live Agents retain their mounted in-memory revision. Logs retain the preset ID, and recovery after restart resolves its current definition rather than restoring an old implementation.
-  - **Fix**: Start a **new session** with the **星衡 · 协作 (`xingheng`)** preset.
+**Running `plugin_manager` in a terminal returns `command not found`**
+It is a DSH assistant tool, not an OS shell command. Ask the assistant to call it inside a DSH session.
 
-### 5.2 Configuration & Save Errors
+**The settings section is missing after install, or the UI warns the Xingheng preset is unavailable**
+Usually the install returned `application: "restart-required"`, or the tab has not been refreshed. Restart the original DSH Host process if required, then refresh. Do not stand up a server on another port as a substitute.
 
-- **Symptom: Save button is disabled, or a warning states *"A saved choice is no longer in the catalog; select an available option."***
-  - **Cause**: A saved or draft `provider`, `model`, or `effort` (for example, after clicking **Fill initial combination**) is not advertised by your current DSH `llm` catalog, or model info resolution returned an error.
-  - **Fix**: Select an available provider, model, and reasoning effort for all three roles. Once all three routes are valid and differ from the saved snapshot (`dirty`), the **Save configuration** button becomes enabled.
-- **Symptom: Saving returns `HTTP 409` (`Configuration conflict`)**
-  - **Cause**: The double CAS check detected that `expectedRevision` no longer matches the latest saved configuration (another tab, tool call, or command saved first).
-  - **Fix**: Click **Reload** in the UI (or call `action: "read"` first), reapply your desired changes to the fresh snapshot, and save.
-- **Symptom: `POST /api/xingheng/v3` returns `HTTP 400`, `413`, or `415`**
-  - **Cause**:
-    - `400`: Malformed `workers` map, missing/extra role keys, leading/trailing whitespace in IDs, or an unregistered provider/model/effort.
-    - `413`: Parsed JSON reserialized with `JSON.stringify` exceeds 12000 JavaScript character units; this is not a strict UTF-8 byte limit.
-    - `415`: Missing `Content-Type: application/json` header on POST.
-  - **Fix**: Ensure the request header is `application/json` and all three role objects match exact IDs from the `action: "read"` catalog.
+**After upgrading to `3.1.0`, an old session has no `team_roster`, `spawn_teammate` or `subagent_message`**
+A running agent keeps its in-memory preset revision, and the mounted list is not replaced. Confirm the Host loaded `3.1.0`, then click **New session** and pick the **星衡 · 协作** (`xingheng`) preset.
 
-### 5.3 Delegation & Team Collaboration Issues
+### 5.2 Saving and validation
 
-- **Symptom: Passing `provider` or `model` to `subagent_iterate/implement/analyze` fails with `selection is disabled`**
-  - **Cause**: Xingheng sets `modelSelection: false` so the Lead cannot override user-configured role routes per call.
-  - **Fix**: Omit model arguments when calling `subagent_iterate/implement/analyze`. Change routes only via Settings or `xingheng_config` when requested by the user.
-- **Symptom: A child agent hits an authentication (401/403), quota, or sandbox permission failure, and the Lead tries to switch roles/models**
-  - **Cause**: Authentication, quota, and sandbox denials are infrastructure or policy blockers, not model capability failures.
-  - **Fix**: Report the exact blocker to the user; do **not** escalate or retry across other subagent roles to bypass infrastructure or permission errors.
+**The save button is disabled, or a yellow warning says the saved choice is no longer in the catalog**
+The saved configuration or draft (say, a model inserted by "Fill initial combination") is not advertised by the registered DSH catalog, or model metadata failed to load (`model.error`). Pick an available, error-free option in each of the three dropdowns; the button returns once all three routes are valid and differ from the saved snapshot (`dirty`).
 
-> **Alias availability**: if a fresh session after restart lacks `team_*` aliases but has native `list_agents`, `send_message` and `interrupt_agent`, use the native Team interfaces and report the Host version, plugin activation state and tool catalog. A model claim alone does not establish registration failure; a new session is not a guaranteed fix for every activation-order issue.
+**Saving returns `HTTP 409` / `Configuration conflict`**
+The two-phase CAS found that `expectedRevision` no longer matches the latest server state, typically because another tab or a command saved first. Click **Reload**, or call `action: "read"` first to get the current `revision`, then reapply your changes to that snapshot and save.
 
+**`POST /api/xingheng/v3` returns `HTTP 400` / `413` / `415`**
+
+- `400`: a missing role among `iterate`/`implement`/`analyze`, an unknown field, whitespace around an ID, or a provider/model/effort the `llm` service does not support.
+- `413`: the parsed JSON reserializes beyond `12000` JavaScript character units. This is not a strict UTF-8 byte limit.
+- `415`: the POST has no `Content-Type: application/json`.
+
+Check the header and the complete three-route structure, and match every ID against the `providers` catalog from `action: "read"`.
+
+### 5.3 Delegation and team collaboration
+
+**Passing `model` to `subagent_iterate/implement/analyze` is rejected with `selection is disabled`**
+`modelSelection: false` is deliberate: it stops the Lead from overriding the user's role routing through call arguments. Drop `provider`/`model`. If the user really wants a different model for a role, save the new route through the settings page or `xingheng_config` first, then call the tool.
+
+**A child hits 401/403, an exhausted quota or a sandbox denial, and the Lead wants to retry with another role**
+Authentication, quota and sandbox denials are infrastructure or policy blockers, not model capability failures. Report the error to the user as it is; do not escalate it into a model failure or switch roles to route around it.
+
+Also: if a restarted session still lacks the `team_*` aliases while the native `list_agents`, `send_message` and `interrupt_agent` are present, use the native interfaces and record the host version, plugin activation state and tool catalog for diagnosis. A model saying "the tool is missing" does not establish a registration failure, and recreating the session is not a guaranteed fix for every activation-order problem.
+
+---
 
 ## Model gateway timeouts
 
-Observed repeated 504 errors came from the `zero / gemini-4-argon / high` upstream. Cloudflare reported `origin_gateway_timeout`: the origin did not respond within its deadline. This is not a GitHub proxy-port or local test error. The response does not isolate the exact cause; origin load, queuing, forwarding and timeout configuration require gateway-side investigation.
+The sustained 504s in the real logs came from the `zero / gemini-4-argon / high` upstream, with Cloudflare reporting `origin_gateway_timeout` — the origin did not respond within its deadline. This is neither the GitHub 7890 proxy port nor a local test failure. The error does not prove model inference time was the sole root cause; origin load, internal queuing, forwarding and timeout settings all belong to gateway operations.
 
-Record route, time, status and request identifier without secrets or full session logs. Follow backoff hints rather than repeatedly resubmitting. Change routes only with user authorization and do not silently overwrite the three saved worker models. Raising a client timeout alone does not bypass a proxy/origin timeout.
+Record the provider/model, time, HTTP status and request identifier (no credentials, no full session logs), and follow the backoff hints in the response rather than clicking "continue" repeatedly or retrying automatically without limit. If the user approves a different route, choose an available provider/model explicitly; do not silently rewrite Xingheng's three saved routes. Raising the client timeout alone does not get you past a server-side origin or proxy limit.

@@ -1,53 +1,60 @@
 # Changelog
 
-All notable changes are recorded here. Versions use semantic versioning.
+本文件记录所有值得注意的变更，版本号遵循语义化版本。
 
 ## 3.1.0 — 2026-11-10
 
-### Role-specialized execution
-- Route analysis to the dedicated `xingheng-analyst` preset, with filesystem mutation flags disabled and no shell/job registration. Iteration and implementation retain `xingheng-worker`.
-- Add Host-owned `worker-policy.js`: refresh masks on creation and blank-session preset selection, release on disposal, and guard non-allowlisted invocations. Resolve capabilities through the Host Agent registry instead of a separate copy of the scope library.
-- Add read/list/message-only native analyst controls and role-specific handoff guidance. Update Lead SOP for facts/planning, cohesive partitioning and independent fresh-context review.
-- Preserve 3.0 role keys, model routes and `/api/xingheng/v3`. Internal exports move to `./role-routing` and `./worker-policy`; update bundle declarations together.
-- Add actual DSH scoped-registry regression tests; 23 automated checks. Real acceptance is recorded separately in `docs/acceptance.md`.
+### 分析角色独立成预设
+
+- `subagent_analyze` 改用新增的 `xingheng-analyst`：关闭文件写入标志，不注册 Shell 和后台作业。迭代与实现仍走 `xingheng-worker`。
+- 新增 Host 侧的 `worker-policy.js`：在创建和空白会话选择预设时刷新掩码，销毁时释放，并对允许表之外的调用做 guard。能力枚举通过 Host 的 Agent 注册表完成，不再依赖另一份 scope 库副本。
+- 新增只读、只列表、只发消息的 analyst 控制入口，并按角色区分交接要求。主控 SOP 相应改为「先摸事实与方案、按内聚切分、用全新上下文独立审查」。
+- 保留 3.0 的角色键、模型路由和 `/api/xingheng/v3`；内部导出改名为 `./role-routing` 和 `./worker-policy`，bundle 声明要同步更新。
+- 增加针对真实 DSH 作用域注册表的回归测试，自动化检查共 23 项。真实模型验收单独记在 `docs/acceptance.md`。
 
 ## 3.0.0 — 2026-11-10
 
-### Breaking role contract
-- Replace role keys with `iterate`, `implement`, `analyze` and delegation tools with `subagent_iterate`, `subagent_implement`, `subagent_analyze`.
-- Rename the role implementation modules to `roles.js` and `role-agent.js`; no legacy parser fallback, tool alias or old module export is retained.
-- Move the authenticated configuration endpoint to `/api/xingheng/v3`; `/v2` is no longer registered.
-- Update UI dictionaries, presets, prompt guidance, JSON examples and rejection tests together. Saved role routes must be explicitly rewritten using the new keys before upgrade.
+### 破坏性的角色接口变更
+
+- 角色键改为 `iterate`、`implement`、`analyze`，委派工具改为 `subagent_iterate`、`subagent_implement`、`subagent_analyze`。
+- 角色实现模块改名为 `roles.js` 和 `role-agent.js`；不保留旧解析器、旧工具别名或旧模块导出。
+- 配置端点迁到 `/api/xingheng/v3`，`/v2` 不再注册。
+- UI 字典、预设、提示词、JSON 示例和拒绝路径的测试一并更新。已保存的角色路由必须用新键显式重写才能升级。
 
 ## 2.1.0 — 2026-11-10
 
-### Agent Teams
-- Enable native named teammates, messages, shared tasks/dependencies, waits and interrupts.
-- Namespace ordinary child controls to coexist with member-target Team tools.
-- Clarify inherited teammate model versus independently configured ordinary worker roles.
-- Add native control-alias regression coverage and updated UI guidance.
-- Add member-scoped Team control aliases preserving the original native executors and authority.
+### 原生 Agent Teams
 
-### Legacy cleanup
-- Migrate the retired Host policy into the new bundle: default preset `xingheng`, depth 1, active-child limit 2, existing model pool and disabled team tool.
-- Document Profile-wide effects and the difference between retaining historical logs and resuming a removed preset.
+- 启用原生命名队友、消息、共享任务与依赖、等待和中断。
+- 给普通子任务控制加上命名空间，与按成员名寻址的团队工具共存。
+- 说明队友继承模型与独立配置的普通角色之间的区别。
+- 补充原生控制别名的回归覆盖和新的 UI 说明。
+- 增加成员作用域内的 Team 控制别名，保留原生执行器与权限。
+
+### 旧版清理
+
+- 把退役的 Host 策略并入新 bundle：默认预设 `xingheng`、深度 1、活动子级上限 2、沿用原模型池、禁用团队工具。
+- 记录 Profile 级影响，以及保留历史日志与恢复已删除预设之间的区别。
 
 ## 2.0.0 — 2026-11-10
 
-Rebuilt as a standalone, portable DSH bundle. This is the first implemented release of this repository; previous draft files were not a working UI release.
+作为独立、可移植的 DSH bundle 重写。这是本仓库第一个真正实现出来的版本，更早的草稿文件没有可用的 UI。
 
-### Added
-- React settings section with live provider/model/effort catalog.
-- Revision-checked persistent configuration through native ConfigEditor.
-- Native executor-based role delegation, with next-child route changes.
-- Authenticated Connection endpoint, matching configuration tool and command.
-- Standalone `xingheng` and `xingheng-worker` presets, test suite, CI and bilingual documentation.
+### 新增
 
-### Corrected
-- Removed fabricated price, capability and speed rankings.
-- Distinguished browser refresh, Host restart and preset revision boundaries.
-- Retained stable legacy tool names for interoperability, with role labels matching actual task purpose.
+- React 设置区，带实时的提供商、模型、推理强度目录。
+- 通过原生 ConfigEditor 做修订号校验的持久化配置。
+- 基于原生执行器的角色委派，路由变更作用于下一个子代理。
+- 带认证的 Connection 端点，以及与之一致的配置工具和命令。
+- 独立的 `xingheng`、`xingheng-worker` 预设，测试套件、CI 和双语文档。
 
-### Migration
-- No automatic deletion of earlier drafts or legacy session records.
-- New sessions explicitly choose `xingheng`; old `economy` sessions keep their composition.
+### 修正
+
+- 移除了编造的价格、能力和速度排名。
+- 区分清楚浏览器刷新、Host 重启与预设 revision 三者的边界。
+- 保留稳定的旧工具名以维持互操作，角色标签与实际任务职责对齐。
+
+### 迁移
+
+- 不自动删除早期草稿或旧会话记录。
+- 新会话显式选择 `xingheng`；旧的 `economy` 会话保留原有组成。

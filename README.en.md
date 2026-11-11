@@ -1,54 +1,68 @@
 # Xingheng
 
-A DeepSeek Harness (DSH) bundle for **read-only analysis, cohesive implementation and targeted iteration**, with persistent per-role model routing and native Agent Teams.
+A DeepSeek Harness (DSH) bundle that splits subagent delegation into three roles: read-only analysis, cohesive implementation and targeted iteration. Each role has its own model. For long-running coordination it uses DSH's native Agent Teams.
 
 **3.1.0** · [中文](README.md) · [Usage](docs/usage.en.md) · [Architecture](docs/architecture.md) · [Migration](docs/migration.md) · [Acceptance](docs/acceptance.md) · [Changelog](CHANGELOG.md)
 
-[Private GitHub repository](https://github.com/skybbk1001/dsh-xingheng); authorized access required, no npm publication. Node 22+. Declared DSH range: `>=0.2.2-rc.1 <0.3`; actual acceptance and pinned native executors target **0.2.2-rc.1**, not every version in that range.
+Source lives in a [private GitHub repository](https://github.com/skybbk1001/dsh-xingheng); access is authorized per account and nothing is published to npm. The declared DSH range is `>=0.2.2-rc.1 <0.3`; actual acceptance and the pinned native executors target **0.2.2-rc.1**, and other versions in that range were not tested one by one. Node.js 22+.
 
-## Roles and capability boundaries
+## The three roles
 
-| Role | Key / tool | Preset | Deliverable |
+| Role | Key / delegation tool | Preset | What it delivers |
 |---|---|---|---|
-| Quick iteration | `iterate` / `subagent_iterate` | `xingheng-worker`, read/write and commands | Minimal targeted patch or explicitly authorized verification |
-| Feature implementation | `implement` / `subagent_implement` | `xingheng-worker`, read/write and commands | Cohesive feature/module slice, interfaces and tests |
-| Analysis and planning | `analyze` / `subagent_analyze` | `xingheng-analyst`, code-reading tools | Exploration, diagnosis, architecture plan or fresh-context review with file/line evidence |
+| Quick iteration | `iterate` / `subagent_iterate` | `xingheng-worker`, read/write and commands | Minimal patch for a known defect or an explicitly authorized check, with the changes and the checks actually run |
+| Feature implementation | `implement` / `subagent_implement` | `xingheng-worker`, read/write and commands | A complete, cohesive feature slice with interfaces and tests |
+| Analysis and planning | `analyze` / `subagent_analyze` | `xingheng-analyst`, code reading | Exploration, root-cause diagnosis, a design, or a zero-context review, with file and line evidence |
 
-The analyst preset does not register write, edit, shell or job tools. A Host-owned policy masks inherited browser, web, IM, configuration and delegation capabilities and guards any non-allowlisted invocation. This is a DSH tool boundary, **not an OS sandbox**. Reading authorized files and sending parent messages remain possible. A trusted plugin's nearer agent-local registration can remain visible, but disallowed execution is guarded.
+Analysis and execution run on the same native DSH executors. What differs is the mounted preset and the contract given to it. The analyst preset registers no write, edit, shell or job tools; a Host-owned policy then trims the inherited browser, search, IM, configuration and delegation capabilities, and a runtime guard rejects calls outside the allowlist.
 
-Worker path scopes, validation permissions, soft checkpoints (12 calls / 10 minutes) and freeze handoffs are prompt conventions, not filesystem locks or billing caps. Native DSH permissions remain authoritative.
+## Boundaries
 
-## Coordination
+- Tool trimming happens at the DSH tool layer only. **It is not an OS sandbox**: the analyst can still read authorized files and message its parent, and `xingheng-worker` can still make network calls from a shell. File permissions are whatever the DSH sandbox mode says.
+- A trusted plugin may register tools closer to the agent that stay visible, but the guard still rejects calls outside the allowlist.
+- Write scopes, validation permission, the 12-call / 10-minute checkpoint and the delivery freeze are conventions in the prompt. The plugin has no budget controller, file lock or automatic completion gate.
+- Parallel analysis reads one shared working tree with no snapshot isolation. Check versions yourself, or freeze writes first.
+- The analyst cannot run tests. Hand verification to an execution role and spell out the exact command.
 
-Handle trivial tasks directly. For unfamiliar or cross-module work: analyze first, stabilize shared interfaces sequentially, then delegate independent cohesive slices. Do not split tightly coupled files between workers. Review substantial changes in a fresh analyst context with requirements, changed files/diff, relevant constraints and known risks rather than the author's full conversation. Freeze writes and have the Lead validate the settled revision.
+## Suggested workflow
 
-Read-only analysis does not provide snapshot isolation; concurrent changes still require version checks or a write freeze. Review findings do not replace tests. Report checks not run.
+1. Do small tasks directly. Do not split work just to have more agents.
+2. For unfamiliar or cross-module work, have the analyst establish the facts, the open questions and a change plan first.
+3. Partition by module cohesion: stabilize shared types and core interfaces sequentially, then parallelize independent modules. Give each task its paths, acceptance criteria and validation permission.
+4. After a substantial change, review the frozen revision with a fresh analyst subagent. Give it the requirements, the diff, the constraints and the known risks — not the author's full conversation.
+5. Collect results, freeze writes, validate, then hand off. Review passing is not the same as tests passing; name the checks that never ran.
 
-## UI and model routing
+## UI and routing
 
-Start a session with **星衡 · 协作** (`xingheng`). Open **Settings → Xingheng · Subagent configuration** for three provider/model/effort selectors. The session-header **Agent Teams** panel shows native members and tasks.
+- Start a session with **星衡 · 协作** (`xingheng`).
+- **Settings → Xingheng · Subagent configuration** picks a provider, model and reasoning effort per role.
+- **Session header → Agent Teams** shows native members and the shared task board.
 
-Configuration uses the DSH model catalog, validates complete routes, saves through ConfigEditor with revision conflict checks, then reads back. Routes apply to the **next child**, not an admitted or running call. Empty effort follows native inheritance/defaults (the same model may inherit Lead effort; changing models uses adapter defaults), not `off`. Advertised capability does not guarantee gateway availability. No model quality, price or speed hierarchy is implied.
+Options come from the DSH model catalog. Saving validates all three routes, persists through ConfigEditor and reads the result back; a revision conflict refuses the overwrite. Saved routes apply to the next child only — a running child is never swapped mid-flight.
+
+An empty reasoning effort follows native inheritance: the same model may inherit the Lead's effort, a different model takes the adapter default. It is not `off`. Being listed in the catalog does not guarantee the upstream gateway will serve it. Role names and the starting combination say nothing about model strength or price.
 
 ![Settings](docs/xingheng-light.png)
 
-[Dark theme](docs/xingheng-dark.png) · [Native Team panel](docs/xingheng-team.png). These are historical real GUI captures; version/help text may predate 3.1. Use current code and dated acceptance for the latest behavior.
+[Dark theme](docs/xingheng-dark.png) · [Native Team panel](docs/xingheng-team.png). These come from a real GUI of an earlier build; version and help text may predate 3.1. The code and the dated acceptance record are authoritative.
 
 ## Ordinary children vs. native teams
 
-Ordinary roles start fresh contexts and use their configured model. Lead controls are `subagent_message`, `subagent_list`, `subagent_interrupt`: message/interrupt use child `agent_id`, list uses `scope`.
+**Ordinary children** start with a fresh context and use the model configured for their role. The Lead drives them with `subagent_message`, `subagent_list` and `subagent_interrupt`: message and interrupt take a child `agent_id`, list takes only `scope`.
 
-Named teammates use native `spawn_teammate`, fresh/fork context, peer messaging and a shared dependency-aware task board. At creation they inherit the Lead model/preset; the current native request has no separate teammate model parameter. Three-role UI settings do not control them. Team aliases `team_roster`, `team_message`, `team_interrupt` preserve native executors and use member `target` names. Task updates require the current revision; assigning/unblocking a task does not wake an inactive member—send a message. Inactive is not proof of completion.
+**Native teammates** are created with `spawn_teammate`, optionally with `fresh` or `fork` context, and get a dependency-aware shared task board plus peer messaging. A teammate inherits the Lead's model and preset at creation; the current `spawn_teammate` has no per-teammate model parameter, so the three role routes do not apply to teammates. Team messaging uses the `team_roster`, `team_message` and `team_interrupt` aliases over the native executors, addressed by member `target`. Task updates need the current revision, and assigning a task or clearing its blockers does not wake an `inactive` member — send a message.
 
-The bundle affects Profile-wide defaults: preset `xingheng`, depth 1, native teams enabled, retained model pool and **2 activation-capacity slots per tree**. Live/materializing children and some waiting/stopping states count, not only running turns. The native **8 lifetime teammate-name slots**, including failed/inactive entries, are separate. User overrides win.
+The bundle's Profile defaults affect other presets too: default preset `xingheng`, delegation depth 1, 2 activation-capacity slots per tree, native team tools on, model pool retained. Capacity counts live, materializing and some waiting/stopping children. Native teams separately cap at **8 lifetime teammate slots**, failed and inactive members included. User overrides win.
 
 ## Install and upgrade
 
-Enable the shipped `dsh-base`, `dsh-web-app`, `dsh-experimental-agent-team-profile` bundles first. Clone the private repository, then ask the DSH assistant to use **`plugin_manager`**, `action: install_bundle`, with the absolute local directory. This is an assistant tool, **not a shell command**. Do not hand-edit the Profile manifest or run package management there.
+The prerequisites are the shipped `dsh-base`, `dsh-web-app` and `dsh-experimental-agent-team-profile` bundles. This package consumes their services rather than reimplementing teams, the agent loop or storage.
 
-Inspect `application`, `warnings` and activation diagnostics. If restart is required, restart the original Host, refresh the GUI and create a new session; browser refresh is not a Host restart. Existing Agents retain their composition revision. Version 3.1 retains the 3.0 keys and `/api/xingheng/v3`, so model settings need no migration, but analysis no longer permits writes or commands.
+Clone the private repository, then ask the DSH assistant to call the `plugin_manager` tool with `action: install_bundle` and the absolute path as `target`. It is not a shell command, and you should not hand-edit the Profile plugin manifest or run package management inside the Profile.
 
-## Development and evidence
+After installing, read `application`, `warnings` and the activation diagnostics. If it returns `restart-required`, restart the original DSH service, then refresh the GUI and start a new session — refreshing the page is not a restart. Existing agents keep their preset revision. Version 3.1 keeps the 3.0 configuration keys and `/api/xingheng/v3`, so the three routes need no re-entry; analysis, however, can no longer modify files or run commands.
+
+## Development
 
 ```sh
 npm ci --ignore-scripts
@@ -56,8 +70,14 @@ npm run verify
 npm run pack:check
 ```
 
-**23 tests** cover validation/CAS, native delegation and controls, Team coexistence, actual DSH registry rebinding, preserved reads, forbidden invocation guards and cleanup. [Acceptance](docs/acceptance.md) separates mocks, native registry tests and real model runs; historical results are not automatically current-version evidence.
+**23 tests** cover validation and CAS, native delegation and controls, team coexistence, preset switching against the real DSH registry, retained read tools, rejected out-of-scope calls and lifecycle cleanup. Unit results and live-model acceptance are recorded separately in the [acceptance report](docs/acceptance.md); old evidence is never presented as current acceptance.
 
-For 400/409, verify complete roles/catalog values or reload the revision. An analyst cannot execute tests by design; assign an explicitly authorized command to an execution worker. A 504 is a gateway timeout, not a reason for endless role switching; see [troubleshooting](docs/usage.en.md#model-gateway-timeouts).
+## When something breaks
 
-Lead model, credentials, filesystem permission mode, search preference and MCP/IM configuration are not changed. MIT, including the original icon. [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md).
+- 400: check that all three role keys are present, the model is in the catalog and the effort is supported. 409: re-read the revision and save again.
+- The analyst cannot run commands by design. Hand the exact command to an execution role as an explicit authorization.
+- A 504 is a gateway timeout; switching roles or retrying will not fix it. Identify the provider, status and layer first, then check the origin and its response time — see [troubleshooting](docs/usage.en.md#model-gateway-timeouts).
+
+The plugin does not touch the Lead model, credentials, filesystem permission mode, search engine or MCP/IM settings.
+
+MIT, original icon included. [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)

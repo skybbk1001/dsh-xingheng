@@ -1,236 +1,243 @@
-# 星衡（Xingheng）详细使用与故障排查指南
+# 星衡（Xingheng）使用与故障排查
 
-本指南详细介绍 `@local/dsh-xingheng` `3.1.0` 的安装流程、三路普通子任务配置接口、原生智能体团队（Agent Teams）与普通执行单元（Worker）的协作规范、工具别名与寻址区分、权限与修订号（Revision）机制，以及常见故障排查方法。
+面向 `@local/dsh-xingheng` `3.1.0`：安装与激活、三路普通子任务配置、原生 Agent Teams 与普通子代理的分工、工具别名与寻址方式、权限与修订号机制，以及常见故障。
 
 [返回中文首页](../README.md) · [English Usage Guide](usage.en.md) · [系统架构](architecture.md) · [迁移与清理](migration.md) · [验收记录](acceptance.md)
 
 ---
 
-## 1. 安装与激活完整流程
+## 1. 安装与激活
 
 ### 1.1 前置条件
 
 - **Node.js**：`>=22`
-- **Profile 前置组件**：需已启用 DSH 的 `dsh-base`、`dsh-web-app` 与 `dsh-experimental-agent-team-profile` 官方组合包。星衡复用这些包提供的服务，不会在缺少 Team 服务时自行创建另一套实现。
-- **DeepSeek Harness (DSH)**：`>=0.2.2-rc.1 <0.3`（当前版本直接复用 `0.2.2-rc.1` 的 `@deepseek-ai/dsh-tool-subagent` 与 `@deepseek-ai/dsh-tool-subagent-control` 原生执行器）
-- **会话权限**：执行 `plugin_manager` 工具需要当前会话具备 `danger-full-access` 权限，或在弹窗审批中明确批准该次工具调用。
+- **Profile 前置组件**：需要已启用 DSH 官方的 `dsh-base`、`dsh-web-app` 和 `dsh-experimental-agent-team-profile` 组合包。星衡复用这些包提供的服务，缺少 Team 服务时不会另起一套实现。
+- **DeepSeek Harness (DSH)**：`>=0.2.2-rc.1 <0.3`。当前版本直接复用 `0.2.2-rc.1` 的 `@deepseek-ai/dsh-tool-subagent` 与 `@deepseek-ai/dsh-tool-subagent-control`。
+- **会话权限**：调用 `plugin_manager` 需要当前会话具备 `danger-full-access`，或在弹窗里明确批准那一次调用。
 
-### 1.2 使用 `plugin_manager` 助手工具安装
+### 1.2 用 `plugin_manager` 安装
 
-在 DSH 会话中向助手发送指令：
+在 DSH 会话里对助手说：
 
 > 请调用 `plugin_manager` 工具（`action: "install_bundle"`，target 为 `/absolute/path/dsh-xingheng`）安装星衡插件。
 
-**必须区分的概念**：
+`plugin_manager` 是助手工具，不是 Shell 命令。正确做法是由助手在回合里发起 `plugin_manager({ action: "install_bundle", target: "/absolute/path/dsh-xingheng" })`；在终端或 `bash` 工具里敲 `plugin_manager ...` 找不到这个命令，手工改 Profile 的 YAML/JSON 也不是安装方式。
 
-1. **`plugin_manager` 是助手工具（Agent Tool），不是 Shell 命令**：
-   - 正确做法：由 AI 助手在回合中发起 `plugin_manager({ action: "install_bundle", target: "/absolute/path/dsh-xingheng" })` 工具调用。
-   - 错误做法：在 `bash` 工具或系统终端中输入 `plugin_manager ...`（终端中不存在该二进制命令），或手动修改 DSH Profile 的 YAML/JSON 配置文件。
-2. **查看返回状态（`application` 与 `warnings`）**：
-   - 当返回包含 `application: "applied"` 时，说明 Host 服务与预设已热加载到当前进程。此时刷新浏览器页面即可。
-   - 当返回包含 `application: "restart-required"`（或伴随 `unmanaged-plugin` 提示）时，说明已加载的底层模块需要在新进程中重新初始化。此时必须**重启当前正在运行的 DSH Host 服务进程**，待进程重启后再刷新浏览器页面。
-   - **切勿混淆**：刷新浏览器网页（F5）只会重新加载前端资源，不会重启后端的 DSH Host 进程；在终端里另起一个新端口的 DSH 服务也不会更新当前浏览器所连接的 GUI 实例。
+看返回里的 `application` 和 `warnings`：
+
+- `application: "applied"`：Host 服务与预设已经热加载进当前进程，刷新浏览器页面即可。
+- `application: "restart-required"`（有时伴随 `unmanaged-plugin` 提示）：已加载的底层模块需要在新进程里重新初始化。这时必须重启正在运行的 DSH Host 进程，重启完再刷新页面。
+
+刷新网页（F5）只重新加载前端资源，不会重启后端。另外起一个其他端口的 DSH 服务，也不会更新当前浏览器连着的那个 GUI。
 
 ---
 
-## 2. 配置普通子代理三路模型路由
+## 2. 配置三路普通子代理
 
-星衡通过同一套后端校验与 `ConfigEditor` 原子持久化逻辑，提供三种等价的配置方式：**Web 设置界面**、**`xingheng_config` 助手工具**、**`/xingheng` 斜杠命令**。
+三路配置共用同一套后端校验和 `ConfigEditor` 原子持久化，入口有三个：Web 设置界面、`xingheng_config` 助手工具、`/xingheng` 斜杠命令。
 
-### 2.1 三路角色定义与默认初始组合
+### 2.1 角色定义与初始组合
 
-| 角色名称 | 英文名称 | 典型任务场景 | 初始组合 |
+| 角色 | 英文名 | 典型任务 | 初始组合 |
 | :--- | :--- | :--- | :--- |
-| **快速迭代** | Quick iteration | 局部修复、小改进、单点检查 | `zero` / `deepseek-v4.1-flash-1017` / `high` |
-| **特性实现** | Feature implementation | 功能开发、接口实现、测试编写 | `zero` / `gpt-6.1-sol` / `medium` |
-| **分析规划** | Analysis and planning | 代码审查、架构分析、复杂问题诊断 | `zero` / `gpt-6.1-terra` / `high` |
+| 快速迭代 | Quick iteration | 局部修复、小改进、单点检查 | `zero` / `deepseek-v4.1-flash-1017` / `high` |
+| 特性实现 | Feature implementation | 功能开发、接口实现、测试编写 | `zero` / `gpt-6.1-sol` / `medium` |
+| 分析规划 | Analysis and planning | 代码审查、架构分析、复杂问题诊断 | `zero` / `gpt-6.1-terra` / `high` |
 
-#### 角色接口标识
+显示名、配置键和委派工具 ID 都按任务职责命名。下面这三个标识是唯一受支持的，没有旧角色键，也没有旧工具名的兼容解析。
 
-显示名称、配置键、委派工具 ID 已统一到任务职责。以下是唯一受支持的标识，不提供旧角色键或旧工具名兼容。
-
-| 角色名称 | 配置键 | 委派工具 ID | 绑定预设与权限边界 |
+| 角色 | 配置键 | 委派工具 ID | 绑定的预设 |
 | :--- | :--- | :--- | :--- |
-| 快速迭代 | `iterate` | `subagent_iterate` | `xingheng-worker`（受控读写 + Shell） |
-| 特性实现 | `implement` | `subagent_implement` | `xingheng-worker`（受控读写 + Shell） |
-| 分析规划 | `analyze` | `subagent_analyze` | `xingheng-analyst`（Schema 级纯只读） |
+| 快速迭代 | `iterate` | `subagent_iterate` | `xingheng-worker`，受控读写 + Shell |
+| 特性实现 | `implement` | `subagent_implement` | `xingheng-worker`，受控读写 + Shell |
+| 分析规划 | `analyze` | `subagent_analyze` | `xingheng-analyst`，只读 |
 
-使用界面或向助手描述任务时，使用角色名称即可。编写 JSON、调用工具或阅读源码时，必须使用上表中的实际标识，不要把中文角色名直接写成 JSON 键。
+在界面里或用自然语言提任务时，用角色名就行。写 JSON、调工具、读源码时必须用上表的实际标识，别把中文角色名当 JSON 键。
 
-> **重要声明**：上述 `DEFAULT_WORKERS` 仅作为初始默认值或「填入初始组合」按钮的草稿模板，**不代表官方对模型质量、推理速度或调用价格的排名建议**。如果当前环境的模型目录中未注册上述提供商或模型，保存会被拒绝，必须改选当前目录中实际存在的模型。
+上表的 `DEFAULT_WORKERS` 只是初始值，也是「填入初始组合」按钮的草稿模板。它不构成对模型质量、速度或价格的排名建议。如果当前模型目录里没有这些提供商或模型，保存会被拒绝，得改成目录里实际存在的。
 
-### 2.2 方式一：通过 Web 设置界面配置
+### 2.2 方式一：Web 设置界面
 
-1. 打开 DSH Web 界面左下角或顶部的 **设置（Settings）**。
-2. 选择左侧导航栏中的 **「星衡 · 子代理配置」**（英文界面为 **Xingheng · Subagent configuration**）。
-3. 为 **01 快速迭代**、**02 特性实现**、**03 分析规划** 分别选择：
-   - **提供商（Provider）**：来自当前 `llm.listProviders()` 的已注册提供商。切换提供商会自动清空该角色的模型与推理强度草稿，防止跨提供商残留非法 ID。
-   - **模型（Model）**：来自所选提供商 `llm.listModels(provider)` 的公开模型列表。切换模型会自动重置该角色的推理强度草稿。
-   - **推理强度（Reasoning effort）**：来自 `llm.resolveModelInfo(provider, model)` 声明支持的推理档位，或选择 **「原生默认（同模型可继承主控）」**（空字符串 `""`）。
-4. 观察底部状态栏：
-   - 修改后状态显示为 **「有未保存的更改」**。
-   - 点击 **「保存配置」**，请求发送至 `./api/xingheng/v3`。保存成功后，界面使用服务端回读的最新快照更新状态，并提示 **「已保存并回读确认；下一个子代理将使用新配置。」**
-   - 若要放弃草稿修改，点击 **「重新读取」** 并确认弹窗。
+1. 打开 DSH Web 界面的**设置**。
+2. 左侧选**星衡 · 子代理配置**（英文界面为 Xingheng · Subagent configuration）。
+3. 给 **01 快速迭代**、**02 特性实现**、**03 分析规划**分别选：
+   - **提供商**：来自 `llm.listProviders()`。换提供商会清空该角色的模型和推理强度草稿，避免跨提供商残留无效 ID。
+   - **模型**：来自 `llm.listModels(provider)`。换模型会重置该角色的推理强度草稿。
+   - **推理强度**：来自 `llm.resolveModelInfo(provider, model)` 声明支持的档位，或者选「原生默认（同模型可继承主控）」，即空字符串 `""`。
+4. 看底部状态栏：
+   - 改动后显示「有未保存的更改」。
+   - 点「保存配置」，请求发到 `./api/xingheng/v3`。成功后界面用服务端回读的快照更新，并提示「已保存并回读确认；下一个子代理将使用新配置。」
+   - 想放弃草稿就点「重新读取」，确认弹窗即可。
 
-### 2.3 方式二：通过 `xingheng_config` 助手工具配置
+### 2.3 方式二：`xingheng_config` 助手工具
 
-在会话中，如果用户明确要求助手读取或修改星衡子代理模型配置，助手可调用 `xingheng_config` 工具（**未经用户要求，主控不得擅自调用该工具更改路由**）：
+只有在用户明确要求读改星衡子代理配置时，助手才调用 `xingheng_config`。没有用户要求，主控不得自己改路由。
 
-- **读取当前配置与可用模型目录**：
-  ```json
-  {
-    "action": "read"
+**读取当前配置与可用目录**：
+
+```json
+{
+  "action": "read"
+}
+```
+
+返回里有 `version`（`"3.1.0"`）、`workers`（三路当前生效配置）、`revision`（CAS 修订号字符串）、`providers`（每个提供商下的 `models`、`efforts`、`defaultEffort`）、`preset`（`xingheng` 预设摘要）和 `applies`（`"next-child"`）。
+
+**保存完整配置**，必须带上最新 `expectedRevision` 和三路完整的 `workers`：
+
+```json
+{
+  "action": "save",
+  "expectedRevision": "[{\"provider\":\"zero\",\"model\":\"deepseek-v4.1-flash-1017\",\"effort\":\"high\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-sol\",\"effort\":\"medium\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-terra\",\"effort\":\"high\"}]",
+  "workers": {
+    "iterate": { "provider": "zero", "model": "deepseek-v4.1-flash-1017", "effort": "medium" },
+    "implement": { "provider": "zero", "model": "gpt-6.1-sol", "effort": "medium" },
+    "analyze": { "provider": "zero", "model": "gpt-6.1-terra", "effort": "high" }
   }
-  ```
-  返回结构包含 `version`（`"3.1.0"`）、`workers`（三路当前生效配置）、`revision`（当前 CAS 修订号字符串）、`providers`（含每个提供商下的 `models`、`efforts`、`defaultEffort`）、`preset`（`xingheng` 预设摘要）以及 `applies`（`"next-child"`）。
+}
+```
 
-- **保存完整配置（必须传入最新 `expectedRevision` 与完整的三路 `workers`）**：
-  ```json
-  {
-    "action": "save",
-    "expectedRevision": "[{\"provider\":\"zero\",\"model\":\"deepseek-v4.1-flash-1017\",\"effort\":\"high\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-sol\",\"effort\":\"medium\"},{\"provider\":\"zero\",\"model\":\"gpt-6.1-terra\",\"effort\":\"high\"}]",
-    "workers": {
-      "iterate": { "provider": "zero", "model": "deepseek-v4.1-flash-1017", "effort": "medium" },
-      "implement": { "provider": "zero", "model": "gpt-6.1-sol", "effort": "medium" },
-      "analyze": { "provider": "zero", "model": "gpt-6.1-terra", "effort": "high" }
-    }
-  }
-  ```
+### 2.4 方式三：`/xingheng` 斜杠命令
 
-### 2.4 方式三：通过 `/xingheng` 斜杠命令配置
-
-- **读取配置**：输入 `/xingheng`（不带参数），返回当前快照 JSON。
-- **保存配置**：输入 `/xingheng {"action":"save","expectedRevision":"...","workers":{...}}`，执行带 CAS 校验的完整保存。
+- **读**：`/xingheng` 不带参数，打印当前快照 JSON。
+- **写**：`/xingheng {"action":"save","expectedRevision":"...","workers":{...}}`，走同一套 CAS 校验的完整保存。
 
 ---
 
-## 3. 普通角色子任务（Worker）工作流
+## 3. 普通角色子任务
 
-当任务属于边界清晰的局部修改、独立功能编写或单点审查，且**不需要多代理之间互相发消息或共享任务依赖看板**时，主控应使用普通角色子任务：
+当任务是边界清楚的局部改动、独立功能，或者单点审查，并且不需要多代理之间互发消息、也不需要共享任务看板时，用普通角色子任务。
 
-### 3.1 启动与模型路由规则
+### 3.1 启动与路由规则
 
-- 主控调用 `subagent_iterate`、`subagent_implement` 或 `subagent_analyze`，传入：
-  - `description`：3–5 个词的简短任务标签（用于界面展示）。
-  - `prompt`：**完整、自包含的任务说明**。因为普通子任务使用 `spawn`（全新上下文），子代理看不到主控的历史对话，必须在 `prompt` 中明确给出：
-    1. **写入范围（Write Scope）**：允许修改的具体文件路径（未列出的路径一律只读）。
-    2. **验收标准（Acceptance Criteria）**：完成的明确定义。
-    3. **验证权限（Validation Permission）**：`xingheng-worker` 默认 `Validation = NONE`（禁止擅自编译、运行测试、下载依赖或编写临时测试运行器）。若需要子代理运行特定验证命令，主控必须在 `prompt` 中明确授权该精确命令。
-  - `cwd`（可选）：子代理初始工作目录。
-- **禁止调用时覆盖模型**：`subagent_iterate/implement/analyze` 已锁定 `modelSelection: false`，不接受 `provider` 或 `model` 参数，按已保存配置取模型；迭代/实现路由到 `xingheng-worker`，分析路由到 `xingheng-analyst`。
+主控调用 `subagent_iterate`、`subagent_implement` 或 `subagent_analyze`，参数是：
 
-### 3.2 控制普通子任务（按 `agent_id` 寻址）
+- `description`：3–5 个词的短标签，用于界面展示。
+- `prompt`：完整、自包含的任务说明。普通子任务走 `spawn`，是全新上下文，看不到主控的历史，所以下面三项必须在 prompt 里写清楚：
+  1. **写入范围**：允许修改的具体文件路径，没列出的路径一律只读。
+  2. **验收标准**：什么情况算完成。
+  3. **验证权限**：`xingheng-worker` 默认 `Validation = NONE`，即不许自行编译、跑测试、下载依赖或写临时测试跑起来。要让子代理跑特定命令，主控必须在 prompt 里明确授权那一条命令。
+- `cwd`（可选）：子代理的初始工作目录。
 
-在 `xingheng` 主控预设中，控制普通子任务的三个工具已重命名为 `subagent_*`，**消息和中断使用子会话 ID（`agent_id`）；列表工具只接受 `scope`，没有目标参数**：
+三个工具都锁定了 `modelSelection: false`，不接受 `provider` 或 `model` 参数，模型按已保存的配置取。迭代和实现路由到 `xingheng-worker`，分析路由到 `xingheng-analyst`。
 
-- **`subagent_list`**：列出当前主控启动的普通子代理（`scope: "children"` 或 `"descendants"`），查看其 `id`、`label` 与 `status`（`running` 或 `inactive`）。
-- **`subagent_message`**：向指定 `agent_id` 的直接子代理发送补充指令或继续其已完成的对话（传入 `{ agent_id: "<child-session-id>", message: "..." }`）。
-- **`subagent_interrupt`**：请求指定 `agent_id` 的子代理停止当前回合工作（传入 `{ agent_id: "<child-session-id>" }`）。
+### 3.2 控制普通子任务
 
-### 3.3 分工、验证与交接
+在 `xingheng` 主控预设里，控制普通子任务的工具统一成了 `subagent_*`。消息和中断用子会话 ID（`agent_id`），列表工具只收 `scope`，没有目标参数：
 
-- **分析规划**：仅代码读取与检索、父子通信；没有 write/edit/Shell/jobs/浏览器/网络搜索/IM/配置修改或委派工具。无法执行测试是设计行为，不应尝试通过其他工具绕过。
-- **特性实现**：按高内聚模块完成写入和测试编写，不按文件数机械分摊；默认不执行未授权验证。
-- **快速迭代**：已知问题的最小补丁，或执行主控明确授权的有限检查；不凭角色名推断实际速度。
-- 共用读写 Worker 并不意味着迭代和实现有不同的 OS 权限，两者的区别是任务契约与提示词，不是独立沙箱。
-- 复杂任务按“只读探路/规划 → 稳定公共接口 → 独立模块实现 → fresh 固定版本审查 → 主控统一验证”推进。不要把全部实现历史转发给审查者；应提供需求、diff、目标版本、约束与已知风险。
-- 并行分析仍读取同一共享工作树，没有自动快照隔离；需冻结写入或核对版本漂移。
-- READY/检查点/冻结是模型行为约定，不是硬性超时或验证强制闸门。交付需明确证据、改动范围、检查执行与未执行项、风险，主控核对后才能接受为完成。
+- `subagent_list`：列出当前主控启动的普通子代理（`scope` 取 `"children"` 或 `"descendants"`），给出 `id`、`label` 和 `status`（`running` 或 `inactive`）。
+- `subagent_message`：向指定 `agent_id` 的直接子代理补发指令，或继续它已完成的对话，参数为 `{ agent_id: "<child-session-id>", message: "..." }`。
+- `subagent_interrupt`：请求指定 `agent_id` 的子代理停下当前回合，参数为 `{ agent_id: "<child-session-id>" }`。
+
+### 3.3 分工与交接
+
+- **分析规划**：只有代码读取、检索和父子通信。没有 write/edit/Shell/jobs、浏览器、网络搜索、IM、配置修改或再委派工具。跑不了测试是设计如此，不要试图用别的工具绕过去。
+- **特性实现**：按高内聚模块写实现和测试，不按文件数机械分摊。默认不做未授权的验证。
+- **快速迭代**：已知问题的最小补丁，或执行主控明确授权的有限检查。别从角色名去推断实际快慢。
+- 迭代和实现共用一个读写 Worker，并不代表它们有不同的 OS 权限。两者的差别是任务契约和提示词，不是两套沙箱。
+- 复杂任务按「只读探路 → 稳定公共接口 → 独立模块实现 → 全新上下文审查固定版本 → 主控统一验证」推进。不要把全部实现历史转给审查者，给需求、diff、目标版本、约束和已知风险就够了。
+- 并行分析读的是同一棵工作树，没有自动快照隔离，需要冻结写入或自己核对版本漂移。
+- READY、检查点、冻结都是模型侧的约定，不是硬性超时，也不是自动验证闸门。交付要说明证据、改动范围、跑过和没跑的检查以及风险，主控核对过才算完成。
 
 ---
 
-## 4. 原生智能体团队（Agent Teams）工作流
+## 4. 原生 Agent Teams
 
-当任务涉及多个相互依赖的工作模块、需要共享任务看板协调进度，或需要不同角色队友之间直接点对点通信时，使用 DSH 原生智能体团队。
+当任务包含多个互相依赖的模块、需要共享任务看板协调进度，或者需要队友之间直接点对点通信时，用 DSH 原生智能体团队。
 
-### 4.1 创建命名队友与模型继承边界
+### 4.1 创建队友与模型继承
 
-- **仅 Team Lead（`lead`）可调用 `spawn_teammate`**：
-  - `name`：唯一的 `lower-kebab-case` 队友名称（如 `"api-impl"`、`"reviewer"`）。
-  - `description`：队友职责简述。
-  - `prompt`：队友的初始任务说明。
-  - `context`：可选 `"fresh"`（默认，全新上下文，不携带主控历史）或 `"fork"`（继承主控已完成的回合历史；仅在队友确实需要完整前文背景时使用）。
-- **队友模型继承自 Lead**：原生队友**创建时继承主控（Lead）的有效模型与当前预设**。当前 DSH 原生 `spawn_teammate` 接口不支持为单个队友指定独立模型，「设置 → 星衡 · 子代理配置」中的三路配置**不影响**团队队友。
+只有 Team Lead（`lead`）能调用 `spawn_teammate`：
 
-### 4.2 团队通信、控制工具与兼容别名（按 `target` 成员名寻址）
+- `name`：唯一的 `lower-kebab-case` 队友名，比如 `"api-impl"`、`"reviewer"`。
+- `description`：职责简述。
+- `prompt`：初始任务说明。
+- `context`：可选 `"fresh"`（默认，全新上下文，不带主控历史）或 `"fork"`（继承主控已完成的回合历史，只在确实需要完整前文时才用）。
 
-验收曾遇到模型声称原生通信工具不可用（确切原因未确认）。为提供显式团队入口，星衡在所有团队成员（Lead 与 Teammate）作用域内同时注册了 **`team_*` 兼容别名**。两者底层执行器、参数与权限完全相同，**推荐优先使用 `team_*` 别名**：
+队友在创建时继承主控的有效模型和当前预设。当前 DSH 原生 `spawn_teammate` 不支持给单个队友指定模型，所以「设置 → 星衡 · 子代理配置」里的三路配置管不到团队队友。
 
-| 推荐使用的团队别名 | 等价的原生团队工具名 | 寻址参数 | 权限与行为说明 |
+### 4.2 团队通信与兼容别名
+
+验收时遇到过模型声称原生通信工具不可用的情况（确切原因没确认）。为了让团队入口更明确，星衡在所有团队成员（Lead 和 Teammate）的作用域内额外注册了一组 `team_*` 别名。两者底层执行器、参数和权限完全相同，推荐优先用 `team_*`：
+
+| 推荐别名 | 等价的原生工具 | 寻址参数 | 行为 |
 | :--- | :--- | :--- | :--- |
-| **`team_roster`** | `list_agents` | 无参数 `{}` | 列出 Lead 与所有命名队友的名称（`target`）、角色与当前状态（`running` / `inactive` / `provisioning` / `failed`） |
-| **`team_message`** | `send_message` | **`target`**（成员名，如 `"lead"` 或 `"reviewer"`）、`message` | 向目标队友或 `"lead"` 发送消息。若目标正在运行，在最近的步骤边界接收；若目标处于 `inactive`，**该消息会唤醒并启动目标的新回合** |
-| **`team_interrupt`** | `interrupt_agent` | **`target`**（队友成员名） | **仅 Team Lead 可调用**。中断指定队友当前正在执行的回合，同时保留其待处理收件箱 |
-| `wait_agent` | `wait_agent` | `timeout_ms`（`10000`–`3600000`，默认 `30000`） | 等待此调用开始后的下一次队友状态变更、新消息或共享任务变更。**绝不会唤醒 `inactive` 成员**；当没有任何其他成员处于 `running` 或 `provisioning` 时，立即返回 `noProgress` |
+| `team_roster` | `list_agents` | `{}` | 列出 Lead 和所有命名队友的名称（`target`）、角色与状态（`running` / `inactive` / `provisioning` / `failed`） |
+| `team_message` | `send_message` | `target`（成员名，如 `"lead"` 或 `"reviewer"`）、`message` | 给目标队友或 `"lead"` 发消息。目标在跑就在最近的步骤边界收到；目标是 `inactive` 时会唤醒并开始新回合 |
+| `team_interrupt` | `interrupt_agent` | `target`（队友名） | 仅 Team Lead 可调用。中断指定队友当前回合，同时保留它的待处理收件箱 |
+| `wait_agent` | `wait_agent` | `timeout_ms`（`10000`–`3600000`，默认 `30000`） | 等这一次调用开始之后的下一次队友状态变更、新消息或共享任务变更。不会唤醒 `inactive` 成员；没有成员处于 `running` 或 `provisioning` 时立即返回 `noProgress` |
 
-> **关键防错提醒**：
-> - 团队工具的参数名是 **`target`**（填成员名，如 `"reviewer"`），而普通子任务工具（`subagent_message` / `subagent_interrupt`）的参数名是 **`agent_id`**（填子会话 ID）。切勿将两者混用！
-> - **`inactive` 不等于任务完成**：`inactive` 仅代表该队友当前没有正在运行的回合。
-> - **调用 `wait_agent` 前必须先检查名册**：在调用 `wait_agent` 前，先用 `team_roster` 确认至少有一个必需的队友正处于 `running` 或 `provisioning` 状态；如果目标队友处于 `inactive`，必须先调用 `team_message` 唤醒它，否则 `wait_agent` 会立即返回 `noProgress`。
+容易搞错的地方：
 
-### 4.3 共享任务看板与 CAS 修订号工作流
+- 团队工具的参数是 `target`（填成员名），普通子任务工具（`subagent_message` / `subagent_interrupt`）的参数是 `agent_id`（填子会话 ID）。这两个别混。
+- `inactive` 只表示当前没有回合在跑，不代表任务完成。
+- 调 `wait_agent` 之前先用 `team_roster` 确认至少有一个必需的队友处于 `running` 或 `provisioning`。如果它在 `inactive`，得先用 `team_message` 唤醒，否则 `wait_agent` 会立刻返回 `noProgress`。
 
-团队成员通过以下四个原生工具协作管理共享任务看板（状态持久化在原生 Session 日志中，请勿创建临时 Markdown/JSON 文件代替原生看板）：
+### 4.3 共享任务看板与修订号
 
-1. **`team_task_create`**：创建待办任务，指定 `subject`、`description`（包含验收标准）、`blocked_by`（前置依赖任务 ID 数组）和 `write_scopes`（建议的相对文件或目录写入前缀数组）。
-2. **`team_task_list`**：按 `status`（`pending` / `in_progress` / `completed`）、`ready`（是否所有 `blocked_by` 均已完成）或 `owner` 筛选任务列表，获取每个任务当前的 `revision` 和写入范围重叠警告。
-3. **`team_task_get`**：在修改或执行单个任务前，读取该 `task_id` 的完整最新详情与当前 `revision`。
-4. **`team_task_update`**：基于最新 `expected_revision` 执行原子 CAS 状态流转（`action` 支持 `claim`、`release`、`edit`、`set_dependencies`、`complete`、`reopen`、`reassign`、`delete`）：
-   - **标准执行顺序**：`team_task_list` → `team_task_get`（获取最新 `revision`）→ `team_task_update({ task_id, expected_revision, action: "claim" })` → 在约定 `write_scopes` 内执行修改 → `team_task_update({ task_id, expected_revision: <新revision>, action: "complete" })`。
-   - **处理修订号冲突**：如果 `team_task_update` 因并发修改返回修订号冲突（Stale Revision），重新调用 `team_task_get` 获取最新 `revision` 后再重试。
-   - **`write_scopes` 是协调提示而非文件系统锁**：团队成员共享同一个工作树，编辑操作对所有人即时可见。应将写入工作拆分为互不重叠的路径前缀；若文件编辑返回 `FS_STALE_VERSION`，需先重新 `read` 最新文件内容，将改动基于新内容重放后再重试，最终由 Lead 统一冻结写入（Freeze）、审查 Diff 并运行最终验证。
-   - **任务就绪不会自动启动 Owner**：即使通过 `reassign` 指派了任务，或前置依赖任务 `complete` 使后续任务变为 `ready: true`，处于 `inactive` 状态的队友也**不会自动启动**；Lead 或完成前置任务的队友必须通过 `team_message` 发消息通知目标队友。
+团队成员用四个原生工具管理共享任务，状态存在原生 Session 日志里。不要另建 Markdown/JSON 文件来代替原生看板。
 
-### 4.4 容量上限对比：活动并发（2） vs. 团队名额（8）
+1. `team_task_create`：建一个待办任务，参数有 `subject`、`description`（写清验收标准）、`blocked_by`（前置任务 ID 数组）、`write_scopes`（建议的相对路径前缀数组）。
+2. `team_task_list`：按 `status`（`pending` / `in_progress` / `completed`）、`ready`（前置是否都已完成）或 `owner` 筛选，返回每个任务的 `revision` 和写入范围重叠警告。
+3. `team_task_get`：改或做某个任务之前，先读该 `task_id` 的最新详情和当前 `revision`。
+4. `team_task_update`：带最新 `expected_revision` 做原子 CAS 流转。`action` 支持 `claim`、`release`、`edit`、`set_dependencies`、`complete`、`reopen`、`reassign`、`delete`。
 
-- **活动并发上限 `2`（`maxActiveSubagents: 2`）**：无论创建的是普通子任务还是团队队友，每棵 activation 树中在线及正在物化的子级容量为 **2**（根主控不计）；等待、待处理收件箱及停止清理也可能占用容量，且最大深度为 **1**（队友或 Worker 不能再嵌套创建子团队或孙代理）。
-- **团队累计名额 `8`**：单个会话中通过 `spawn_teammate` 创建的命名队友总数上限默认为 **8**。已处于 `inactive` 或创建失败（`failed`）的队友依然占用该名额，且同一会话内不能重复使用已注册过的队友名称。因此，应复用已有的命名队友（通过 `team_message` 发送新切片任务），而不是频繁创建一次性新队友。
+标准顺序是 `team_task_list` → `team_task_get` 拿最新 `revision` → `claim` → 在约定好的 `write_scopes` 内改 → 带上新 `revision` 执行 `complete`。如果因为别人并发修改导致修订号冲突，重新 `team_task_get` 拿最新 revision 再试。
+
+`write_scopes` 是协调提示，不是文件锁。团队成员共用一棵工作树，改动对所有人即时可见。写入要拆成互不重叠的路径前缀；编辑返回 `FS_STALE_VERSION` 时，先重新 `read` 最新内容，把改动重放到新内容上再试。最后由 Lead 冻结写入、审查 diff、跑最终验证。
+
+任务就绪不会自动启动 Owner。不管是 `reassign` 指派，还是前置任务 `complete` 让后续任务变成 `ready: true`，处于 `inactive` 的队友都不会自己动起来。Lead 或完成前置的那个队友得用 `team_message` 通知它。
+
+### 4.4 两种容量上限
+
+- **活动并发 2**（`maxActiveSubagents: 2`）：每棵 activation 树里在线和正在物化的子级容量是 2，根主控不算。等待中的、收件箱有活的和正在停止清理的可能也占位。最大深度 1，即队友或 Worker 不能再往下嵌套。
+- **团队累计名额 8**：单个会话里通过 `spawn_teammate` 创建的命名队友总数默认 8 个。`inactive` 的和创建失败（`failed`）的照样占名额，同一个会话里也不能重复使用已经注册过的名字。所以应该复用现有队友、用 `team_message` 派新活，而不是每来一点活就新建一个。
 
 ---
 
-## 5. 故障排查详解（Troubleshooting）
+## 5. 故障排查
 
-### 5.1 安装与激活类问题
+### 5.1 安装与激活
 
-- **问题：在终端运行 `plugin_manager` 提示 `command not found`**
-  - **原因**：`plugin_manager` 是 DSH 提供给 AI 助手的内置工具（Tool），不是操作系统的 Shell 命令。
-  - **解决**：在 DSH 聊天会话中让助手调用 `plugin_manager` 工具。
-- **问题：安装后设置页没有「星衡 · 子代理配置」，或设置页顶部警告「星衡预设未激活」**
-  - **原因**：`plugin_manager` 安装结果返回了 `application: "restart-required"`，或者浏览器页面尚未刷新。
-  - **解决**：先重启原有的 DSH Host 服务进程（如果要求重启），然后刷新当前浏览器页面。不要启动另一个端口的替代服务。
-- **问题：升级到 `3.1.0` 后，在旧会话里看不到 `team_roster`、`spawn_teammate` 或 `subagent_message`**
-  - **原因**：仍运行的 Agent 保留内存预设 revision，不会自动替换挂载列表；重启恢复则按日志中的预设 ID 解析当前定义。
-  - **解决**：确保 Host 已加载 `3.1.0`，然后点击 **新建会话** 并选择 **星衡 · 协作（`xingheng`）** 预设。
+**终端里跑 `plugin_manager` 报 `command not found`**
+`plugin_manager` 是 DSH 提供给助手的内置工具，不是操作系统的 Shell 命令。在 DSH 会话里让助手调用它。
 
-### 5.2 配置保存与校验类问题
+**装完设置页没有「星衡 · 子代理配置」，或顶部警告「星衡预设未激活」**
+多半是安装结果返回了 `application: "restart-required"`，或者页面还没刷新。先重启原来的 DSH Host 进程（如果需要），再刷新当前页面。不要另起一个端口的服务来代替。
 
-- **问题：保存按钮呈禁用状态，或卡片下方出现黄色警告「当前配置中的项目不在目录中；请重新选择后保存」**
-  - **原因**：当前已保存的配置或草稿（例如点击「填入初始组合」填入的模型）不在当前 DSH 已注册的提供商/模型目录中，或者该模型加载元数据失败（`model.error`）。
-  - **解决**：依次在提供商、模型、推理强度下拉框中选择当前可用且无报错的选项，当三路角色均有效且与已保存状态不同（`dirty`）时，保存按钮即恢复可用。
-- **问题：点击保存或调用 `xingheng_config` 返回 `HTTP 409` / `Configuration conflict`**
-  - **原因**：双阶段 CAS 检测到当前提交的 `expectedRevision` 与服务器最新保存的配置不一致（例如同时在另一个标签页或通过命令修改了配置）。
-  - **解决**：在 UI 中点击 **「重新读取」**（或在工具中先执行 `action: "read"` 获取最新 `revision`），在最新快照基础上重新修改并保存。
-- **问题：POST `/api/xingheng/v3` 返回 `HTTP 400` / `413` / `415`**
-  - **原因**：
-    - `400`：缺少 `iterate`/`implement`/`analyze` 任一角色、包含未知字段、ID 含有首尾空格，或所选提供商/模型/推理强度不被当前 `llm` 服务支持。
-    - `413`：解析后的 JSON 再序列化后超过 `12000` 个 JavaScript 字符单元；不是严格的 UTF-8 字节限制。
-    - `415`：POST 请求未设置 `Content-Type: application/json`。
-  - **解决**：核对请求头与三路完整结构，确保所有 ID 与 `action: "read"` 返回的 `providers` 目录严格一致。
+**升到 `3.1.0` 后旧会话里看不到 `team_roster`、`spawn_teammate` 或 `subagent_message`**
+运行中的 Agent 保留着内存里的预设 revision，挂载列表不会自动替换。确认 Host 已加载 `3.1.0` 后，点**新建会话**并选**星衡 · 协作**（`xingheng`）预设。
 
-### 5.3 委派与团队协作类问题
+### 5.2 配置保存与校验
 
-- **问题：调用 `subagent_iterate/implement/analyze` 时传入 `model` 参数被拒绝（`selection is disabled`）**
-  - **原因**：星衡故意锁定了 `modelSelection: false`，防止主控在调用参数中绕过用户在 UI 中设定的角色模型路由。
-  - **解决**：移除调用参数中的 `provider`/`model` 字段；若用户确实要求更换某角色的模型，先通过设置页或 `xingheng_config` 保存新路由，再调用 `subagent_iterate/implement/analyze`。
-- **问题：模型遇到 API 401/403 鉴权失败、配额耗尽（Quota）或沙箱权限拒绝时，主控试图换用其他子代理角色重试**
-  - **原因**：鉴权、配额与沙箱权限属于基础设施或策略阻断（Infrastructure / Policy Blocker），并非模型能力不足。
-  - **解决**：遵循星衡协作规范，直接向用户如实报告该鉴权/配额/权限错误，**不要**将其当作模型失败而升级或切换到其他角色重试。
+**保存按钮是灰的，或卡片下出现黄色警告「当前配置中的项目不在目录中；请重新选择后保存」**
+当前保存的配置或草稿（比如点了「填入初始组合」填进去的模型）不在 DSH 已注册的提供商/模型目录里，也可能该模型加载元数据失败（`model.error`）。依次在三个下拉框里选当前可用且不报错的选项；三路都有效且与已保存状态不同（`dirty`）时，保存按钮会恢复。
 
-> **别名可见性排查**：若已重启的新会话仍缺少 `team_*` 别名，但原生 `list_agents` / `send_message` / `interrupt_agent` 存在，可使用原生团队接口，并记录宿主版本、插件激活状态与工具目录供诊断。单凭模型说“没有工具”不能判断注册失败，也不能保证重建会话即可解决所有启动顺序问题。
+**保存返回 `HTTP 409` / `Configuration conflict`**
+双阶段 CAS 发现提交的 `expectedRevision` 和服务器最新的不一致，常见于同时在另一个标签页或用命令改过配置。在界面里点「重新读取」，或在工具里先 `action: "read"` 拿最新 `revision`，然后在最新快照上重做修改再保存。
 
+**`POST /api/xingheng/v3` 返回 `HTTP 400` / `413` / `415`**
+
+- `400`：缺 `iterate`/`implement`/`analyze` 中任一角色、带了未知字段、ID 首尾有空格，或所选提供商/模型/推理强度不被当前 `llm` 服务支持。
+- `413`：解析后的 JSON 再序列化超过 `12000` 个 JavaScript 字符单元。这不是严格的 UTF-8 字节限制。
+- `415`：POST 没设 `Content-Type: application/json`。
+
+按请求头和三路完整结构逐项核对，所有 ID 都要和 `action: "read"` 返回的 `providers` 目录严格一致。
+
+### 5.3 委派与团队协作
+
+**调用 `subagent_iterate/implement/analyze` 时传 `model` 被拒（`selection is disabled`）**
+星衡故意锁了 `modelSelection: false`，防止主控在调用参数里绕过用户在界面设定的角色路由。把 `provider`/`model` 去掉；如果用户确实要换某个角色的模型，先通过设置页或 `xingheng_config` 保存新路由，再调用。
+
+**子代理遇到 API 401/403、配额耗尽或沙箱权限拒绝，主控想换个角色重试**
+鉴权、配额和沙箱权限属于基础设施或策略阻断，不是模型能力不足。按协作规范，如实把这个错误报告给用户，不要当成模型失败去升级或换角色重试。
+
+另外，如果重启后的新会话仍然缺 `team_*` 别名，但原生的 `list_agents` / `send_message` / `interrupt_agent` 都在，可以直接用原生接口，同时记下宿主版本、插件激活状态和工具目录供诊断。单凭模型说「没有工具」判断不了注册是否失败，重建会话也不保证解决所有启动顺序问题。
+
+---
 
 ## 模型网关超时
 
-本次实际日志中的持续 504 发生在 `zero / gemini-4-argon / high` 的上游，Cloudflare 返回 `origin_gateway_timeout`，指源站未按时响应；不是 GitHub 7890 代理端口或本地测试失败。报错未证明唯一根因是模型推理时间，源站负载、内部等待、转发和超时配置均应由网关运维检查。
+实际日志里持续出现的 504 发生在 `zero / gemini-4-argon / high` 的上游，Cloudflare 返回 `origin_gateway_timeout`，意思是源站没在期限内响应。这既不是 GitHub 7890 代理端口的问题，也不是本地测试失败。报错本身没有证明唯一根因是模型推理耗时；源站负载、内部排队、转发和超时配置都应该由网关侧检查。
 
-先记录提供商/模型、时间、HTTP 状态及请求标识（不要上传凭据或完整会话），遵循响应中的退避提示，避免连续“继续”或无限自动重试。若用户允许换路线，显式选择可用提供商/模型；不要静默改写星衡三路保存配置。单纯增大客户端超时不保证越过源站/代理的服务端上限。
+先记下提供商/模型、时间、HTTP 状态和请求标识（不要上传凭据或完整会话日志），按响应里的退避提示来，别连续点「继续」或无限自动重试。用户同意换路线时，显式选一个可用的提供商/模型；不要静默改写星衡的三路保存配置。单纯调大客户端超时，也不保证能越过源站或代理的服务端上限。
